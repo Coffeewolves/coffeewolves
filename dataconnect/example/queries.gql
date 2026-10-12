@@ -1,9 +1,0 @@
-query GetMyProfile @auth(level: USER) {
-  user(key: { id_expr: "auth.uid" }) {
-    id
-    username
-    email
-    avatarUrl
-    giftCardBalance
-  }
-}
