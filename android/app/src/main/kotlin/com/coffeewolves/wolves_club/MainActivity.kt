@@ -1,5 +1,0 @@
-package com.coffeewolves.wolves_club
-
-import io.flutter.embedding.android.FlutterActivity
-
-class MainActivity: FlutterActivity()
