@@ -1,0 +1,36 @@
+# 1. Tabla de Usuarios (Para "Mi perfil" y "Billetera")
+type User @table(key: ["id"]) {
+  id: String!
+  username: String!
+  email: String!
+  avatarUrl: String
+  giftCardBalance: Float!
+}
+
+# 2. Tabla de Amigos (Para la sección "Manada" y "Match de citas y amigos")
+type Friendship @table(key: ["id"]) {
+  id: UUID!
+  user1: User!
+  user2: User!
+  status: String!
+}
+
+# 3. Tabla del Menú (Para "Menú café" y "Wolves Shop")
+type Product @table(key: ["id"]) {
+  id: UUID!
+  name: String!
+  description: String!
+  price: Float!
+  pointsRequired: Int!
+  imageUrl: String
+  category: String!
+}
+
+# 4. Tabla de Eventos (Para la sección "Eventos")
+type Event @table(key: ["id"]) {
+  id: UUID!
+  title: String!
+  description: String!
+  eventDate: String!
+  location: String!
+}
