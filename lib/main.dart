@@ -5180,13 +5180,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           ? ''
           : '@${userName.toLowerCase().replaceAll(RegExp(r'\s+'), '')}';
       if (user == null &&
-          const {
-            'pos',
-            'barista',
-            'baristaAudit',
-            'admin',
-            'emailVerification'
-          }.contains(page)) {
+          const {'pos', 'barista', 'baristaAudit', 'admin', 'emailVerification'}
+              .contains(page)) {
         page = 'login';
       }
     });
@@ -6846,7 +6841,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         setDialogState(
           () => errorMessage =
               'Ingresa nombre y apellido, un Username válido y una contraseña '
-              'de al menos 8 caracteres.',
+                  'de al menos 8 caracteres.',
         );
         return;
       }
@@ -9334,8 +9329,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   Future<void> _refreshWalletBalance(String customerUid) async {
     try {
-      final balance =
-          await _rewardAuditService.getWalletBalance(customerUid);
+      final balance = await _rewardAuditService.getWalletBalance(customerUid);
       if (!mounted || _firebaseUser?.uid != customerUid) return;
       setState(() => _walletBalance = balance);
     } on FirebaseException catch (error, stackTrace) {
@@ -12195,7 +12189,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.mark_email_unread_outlined, color: gold, size: 58),
+              const Icon(Icons.mark_email_unread_outlined,
+                  color: gold, size: 58),
               const SizedBox(height: 18),
               const Text(
                 'CONFIRMA TU CORREO',
@@ -23867,7 +23862,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             'inténtalo después de que se restablezca la cuota.',
       'permission-denied' =>
         'Firestore no autorizó la operación. Actualiza las reglas de seguridad.',
-      'unavailable' || 'deadline-exceeded' =>
+      'unavailable' ||
+      'deadline-exceeded' =>
         'Firestore no está disponible ahora. Revisa tu conexión e inténtalo de nuevo.',
       _ => error.message?.trim().isNotEmpty == true
           ? error.message!.trim()
@@ -28008,9 +28004,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         builder: (dialogContext) => AlertDialog(
           backgroundColor: card,
           title: Text(
-            imageName?.isNotEmpty == true
-                ? imageName!
-                : 'Captura adjunta',
+            imageName?.isNotEmpty == true ? imageName! : 'Captura adjunta',
             style: const TextStyle(color: cream, fontSize: 14),
           ),
           content: ConstrainedBox(
@@ -28035,19 +28029,54 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         ),
       );
     } on FormatException catch (error, stackTrace) {
-      debugPrint('La captura de soporte no tiene formato Base64 válido: $error');
+      debugPrint(
+          'La captura de soporte no tiene formato Base64 válido: $error');
       debugPrintStack(stackTrace: stackTrace);
       _showSnackBar('No se pudo abrir la captura adjunta.');
     }
   }
 
   Future<void> _showCustomerComplaintForm() async {
-    final user = _firebaseUser;
-    if (user?.email == null) {
+    final initialUser = FirebaseAuth.instance.currentUser;
+    if (initialUser == null) {
       _showSnackBar(
-          'Inicia sesión con una cuenta de correo para enviar tu caso.');
+        'Inicia sesión con una cuenta de correo para enviar tu caso.',
+      );
       return;
     }
+    User? refreshedUser;
+    try {
+      await initialUser.reload();
+      refreshedUser = FirebaseAuth.instance.currentUser;
+      if (refreshedUser == null || refreshedUser.uid != initialUser.uid) {
+        _showSnackBar('La sesión terminó. Inicia sesión nuevamente.');
+        return;
+      }
+      await refreshedUser.getIdToken(true);
+    } on FirebaseAuthException catch (error, stackTrace) {
+      debugPrint(
+        'No se pudo actualizar la sesión antes de abrir soporte: '
+        '${error.code}.',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      _showSnackBar(
+        'No se pudo comprobar tu sesión (${error.code}). Inténtalo de nuevo.',
+      );
+      return;
+    }
+    if (refreshedUser.email == null) {
+      _showSnackBar(
+        'Agrega un correo electrónico a tu cuenta para enviar un caso.',
+      );
+      return;
+    }
+    if (!refreshedUser.emailVerified) {
+      _showSnackBar(
+        'Verifica tu correo antes de enviar un mensaje a soporte.',
+      );
+      return;
+    }
+    final user = refreshedUser;
     final detailsController = TextEditingController();
     final subjectController = TextEditingController();
     final orderController = TextEditingController();
@@ -28112,7 +28141,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     onPressed: isSubmitting
                         ? null
                         : () => unawaited(
-                              _showMyCustomerComplaintHistory(user!.uid),
+                              _showMyCustomerComplaintHistory(user.uid),
                             ),
                     icon: const Icon(Icons.inbox_outlined, size: 16),
                     label: const Text('VER MIS MENSAJES Y RESPUESTAS'),
@@ -28178,7 +28207,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       prefixIcon: Icon(Icons.badge_outlined),
                     ),
                     child: SelectableText(
-                      user!.uid,
+                      user.uid,
                       style: const TextStyle(color: muted, fontSize: 12),
                     ),
                   ),
@@ -28363,10 +28392,33 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                           errorMessage = null;
                         });
                         try {
+                          final activeUser = FirebaseAuth.instance.currentUser;
+                          if (activeUser == null ||
+                              activeUser.uid != user.uid) {
+                            throw StateError(
+                              'La sesión terminó. Inicia sesión nuevamente.',
+                            );
+                          }
+                          await activeUser.reload();
+                          final verifiedUser =
+                              FirebaseAuth.instance.currentUser;
+                          if (verifiedUser == null ||
+                              verifiedUser.uid != user.uid) {
+                            throw StateError(
+                              'La sesión terminó. Inicia sesión nuevamente.',
+                            );
+                          }
+                          await verifiedUser.getIdToken(true);
+                          if (!verifiedUser.emailVerified ||
+                              verifiedUser.email == null) {
+                            throw StateError(
+                              'Verifica tu correo antes de enviar el caso.',
+                            );
+                          }
                           final caseId =
                               await _businessOperationsService.submitComplaint(
-                            customerUid: user.uid,
-                            customerEmail: user.email!,
+                            customerUid: verifiedUser.uid,
+                            customerEmail: verifiedUser.email!,
                             shift: selectedShift,
                             feedbackType: selectedFeedbackType,
                             incident: selectedIncident,

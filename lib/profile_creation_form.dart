@@ -290,6 +290,13 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       ),
     );
     if (selected == null || !mounted) return;
+    if (_ageOn(selected) < 18) {
+      setState(() {
+        _errorMessage =
+            'Debes tener al menos 18 años para registrar esta fecha.';
+      });
+      return;
+    }
     await _saveBirthdayDetails(
       selected,
       _birthdayMarketingConsent,
@@ -300,10 +307,10 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
     DateTime birthDate,
     bool consent,
   ) async {
-    final user = _currentUser;
-    if (user == null || !user.emailVerified) {
+    final initialUser = _currentUser;
+    if (initialUser == null) {
       setState(() {
-        _errorMessage = 'Verifica tu correo para cambiar esta preferencia.';
+        _errorMessage = 'Inicia sesión para cambiar esta preferencia.';
       });
       return;
     }
@@ -313,6 +320,17 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       _errorMessage = null;
     });
     try {
+      await initialUser.reload();
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || user.uid != initialUser.uid) {
+        throw StateError('La sesión terminó. Inicia sesión nuevamente.');
+      }
+      if (!user.emailVerified) {
+        throw StateError(
+          'Verifica tu correo y vuelve a iniciar sesión para cambiar esta preferencia.',
+        );
+      }
+      await user.getIdToken(true);
       final profileReference =
           FirebaseFirestore.instance.collection('users').doc(user.uid);
       await FirebaseFirestore.instance.runTransaction<void>((transaction) async {
@@ -377,16 +395,48 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
     DateTime birthDate,
     bool marketingConsent,
   ) async {
+    final initialUser = _currentUser;
+    if (initialUser == null) {
+      setState(() {
+        _errorMessage = 'Inicia sesión para registrar tu fecha de nacimiento.';
+      });
+      return;
+    }
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
     try {
-      await FirebaseFunctions.instanceFor(region: 'us-central1')
-          .httpsCallable('saveBirthdayDetails')
-          .call({
-        'birthDate': _formatBirthDateForStorage(birthDate),
-        'birthdayMarketingConsent': marketingConsent,
+      await initialUser.reload();
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || user.uid != initialUser.uid) {
+        throw StateError('La sesión terminó. Inicia sesión nuevamente.');
+      }
+      if (!user.emailVerified) {
+        throw StateError(
+          'Verifica tu correo y vuelve a iniciar sesión para guardar tu fecha.',
+        );
+      }
+      await user.getIdToken(true);
+      final profileReference =
+          FirebaseFirestore.instance.collection('users').doc(user.uid);
+      await FirebaseFirestore.instance.runTransaction<void>((transaction) async {
+        final profile = await transaction.get(profileReference);
+        if (!profile.exists) {
+          throw StateError('No se encontró tu perfil de Coffee Wolves.');
+        }
+        final data = profile.data()!;
+        if (data.containsKey('birthDate') ||
+            data.containsKey('dateOfBirth')) {
+          throw StateError(
+            'Ya existe una fecha de nacimiento en tu perfil. Actualiza la página e inténtalo de nuevo.',
+          );
+        }
+        transaction.update(profileReference, {
+          'birthDate': _formatBirthDateForStorage(birthDate),
+          'birthdayMarketingConsent': marketingConsent,
+          'birthdayConsentUpdatedAt': FieldValue.serverTimestamp(),
+        });
       });
       if (!mounted) return;
       setState(() {
@@ -394,7 +444,13 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
         _birthdayMarketingConsent = marketingConsent;
         _errorMessage = 'Fecha de nacimiento guardada.';
       });
-    } on FirebaseFunctionsException catch (error, stackTrace) {
+    } on StateError catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = error.message;
+      });
+    } on FirebaseException catch (error, stackTrace) {
       debugPrint(
         'No se pudo guardar la fecha de nacimiento: ${error.code}',
       );

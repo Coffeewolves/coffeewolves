@@ -48,8 +48,31 @@ function updateSubmitState() {
     !form.checkValidity();
 }
 
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
   currentUser = user;
+  if (user) {
+    try {
+      await user.reload();
+      const refreshedUser = auth.currentUser;
+      if (!refreshedUser || refreshedUser.uid !== user.uid) {
+        currentUser = null;
+        setNotice("La sesión terminó. Inicia sesión nuevamente.", "error");
+        updateSubmitState();
+        return;
+      }
+      await refreshedUser.getIdToken(true);
+      currentUser = refreshedUser;
+    } catch (error) {
+      console.error("No se pudo actualizar la sesión de soporte:", error);
+      currentUser = null;
+      setNotice(
+        "No se pudo comprobar tu sesión. Recarga la página e inténtalo de nuevo.",
+        "error",
+      );
+      updateSubmitState();
+      return;
+    }
+  }
   const userIdInput = document.querySelector("#user-id");
   if (user?.emailVerified) {
     userIdInput.value = user.uid;
@@ -123,16 +146,25 @@ async function compressScreenshot(file) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   formMessage.textContent = "";
-  if (!currentUser?.emailVerified) {
-    setNotice("Inicia sesión con tu correo verificado para enviar el caso.", "error");
-    updateSubmitState();
-    return;
-  }
   if (!form.reportValidity()) return;
 
   submitButton.disabled = true;
   submitButton.querySelector(".button-label").textContent = "Enviando…";
   try {
+    const initialUser = currentUser;
+    if (!initialUser) {
+      throw new Error("Inicia sesión con tu correo verificado para enviar el caso.");
+    }
+    await initialUser.reload();
+    const verifiedUser = auth.currentUser;
+    if (!verifiedUser || verifiedUser.uid !== initialUser.uid) {
+      throw new Error("La sesión terminó. Inicia sesión nuevamente.");
+    }
+    await verifiedUser.getIdToken(true);
+    if (!verifiedUser.emailVerified) {
+      throw new Error("Confirma tu correo antes de enviar el caso.");
+    }
+    currentUser = verifiedUser;
     const attachment = selectedImage
       ? await compressScreenshot(selectedImage)
       : null;
@@ -140,8 +172,8 @@ form.addEventListener("submit", async (event) => {
     const subject = document.querySelector("#subject").value.trim();
     const details = document.querySelector("#details").value.trim();
     const data = {
-      customerUid: currentUser.uid,
-      customerEmail: currentUser.email,
+      customerUid: verifiedUser.uid,
+      customerEmail: verifiedUser.email,
       shift: "morning",
       incident: category,
       feedbackType: "complaint",
