@@ -22,6 +22,7 @@ import 'firebase_options.dart';
 import 'business_operations_service.dart';
 import 'chat_credit_service.dart';
 import 'mischief_wall_screen.dart';
+import 'pack_legacy_screen.dart';
 import 'profile_creation_form.dart';
 import 'member_card_service.dart';
 import 'product_catalog_service.dart';
@@ -11665,7 +11666,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       'sales' => 'VENTAS',
       'orders' => 'PEDIDOS',
       'inventory' => 'INVENTARIO',
-      'promotions' => 'PROMOCIONES Y EVENTOS',
+      'promotions' => 'PROMOCIONES, EVENTOS Y LEGADO',
       'team' => 'PERSONAL',
       'customers' => 'CLIENTES',
       'support' => 'SOPORTE Y RECLAMOS',
@@ -11940,6 +11941,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
       case 'mischiefWall':
         return MischiefWallScreen(onClose: back);
+
+      case 'legacy':
+        return PackLegacyScreen(onBack: back);
 
       case 'dateConfirmation':
         return _dateConfirmation();
@@ -16690,7 +16694,16 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           ],
         );
       case 'promotions':
-        return _adminAnnouncementsSection();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _adminAnnouncementsSection(),
+            const SizedBox(height: 24),
+            const Divider(color: Color(0xFF433A34)),
+            const SizedBox(height: 16),
+            const PackLegacyScreen(canManage: true, showBackButton: false),
+          ],
+        );
       case 'customers':
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -22670,6 +22683,56 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     ),
                   ),
                 ],
+              ),
+
+              const SizedBox(height: 10),
+
+              InkWell(
+                key: const ValueKey('home-open-pack-legacy'),
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => go('legacy'),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: card,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: gold.withValues(alpha: 0.55)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.auto_stories_outlined, color: gold, size: 27),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'LEGADO DE LA MANADA',
+                              style: TextStyle(
+                                color: gold,
+                                fontSize: 11,
+                                letterSpacing: 1,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Conoce las historias de miembros y mascotas que dejan huella.',
+                              style: TextStyle(
+                                color: cream,
+                                fontSize: 11,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Icon(Icons.arrow_forward_ios, color: muted, size: 15),
+                    ],
+                  ),
+                ),
               ),
 
               const SizedBox(height: 10),
@@ -29634,6 +29697,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             'El Muro de las Travesuras',
             () => go('mischiefWall'),
           ),
+          _profileOption(
+            Icons.auto_stories_outlined,
+            'Legado de la Manada',
+            () => go('legacy'),
+          ),
           _profileOption(Icons.local_cafe_outlined, 'Coffee Passport',
               () => go('passport')),
           _profileOption(Icons.event_outlined, 'Eventos', () => go('events')),
@@ -29668,6 +29736,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       selectedIndex = 1;
     } else if (page == 'experience' ||
         page == 'passport' ||
+        page == 'legacy' ||
         page == 'events' ||
         page == 'challenges' ||
         page == 'rewards') {

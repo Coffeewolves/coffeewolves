@@ -22,6 +22,27 @@ class CoffeePupGameService {
     return _firestore.collection('coffeePupProfiles').doc(uid).snapshots();
   }
 
+  Future<String> startGame({
+    required String profileId,
+    required String gameType,
+  }) async {
+    if (!const {'trivia', 'preferences'}.contains(gameType)) {
+      throw ArgumentError.value(
+          gameType, 'gameType', 'Tipo de juego inválido.');
+    }
+    final result = await _functions
+        .httpsCallable('startCoffeePupGame')
+        .call<Map<String, dynamic>>({
+      'profileId': profileId,
+      'gameType': gameType,
+    });
+    final sessionId = result.data['sessionId'];
+    if (sessionId is! String || sessionId.isEmpty) {
+      throw StateError('El servidor no devolvió una partida válida.');
+    }
+    return sessionId;
+  }
+
   Future<Map<String, dynamic>> submitAnswer({
     required String sessionId,
     required String questionId,

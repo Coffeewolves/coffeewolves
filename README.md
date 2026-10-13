@@ -547,6 +547,16 @@ de coleccionables devuelve `permission-denied`, publica las reglas Firestore
 actualizadas con `firebase deploy --only firestore:rules`; la interfaz muestra
 el código real del error y ofrece reintentar sin ocultar los otros módulos.
 
+**Legado de la Manada** es una vitrina pública curada por Gerencia, separada
+del Coffee Passport y del Muro de las Travesuras. Los perfiles se almacenan en
+`packLegacyProfiles`; solo los documentos con `published: true` se muestran a
+los miembros. Gerencia puede crear, editar, publicar, retirar y guardar
+borradores desde **Promociones, Eventos y Legado**. Cada perfil puede incluir
+la historia del miembro y su mascota, logros, reconocimientos y experiencias
+especiales. La vitrina comienza vacía: Gerencia agrega contenido real antes de
+publicarlo. Para habilitarla en producción, despliega las reglas Firestore
+actualizadas con `firebase deploy --only firestore:rules`.
+
 Para registrar métodos del Coffee Passport y canjear la taza de 9/9, la cuenta
 debe tener una Wolves Member Card activa (`CW-XXXXXX`). El personal ingresa el
 número de tarjeta o el valor codificado en su QR; los UID directos no se

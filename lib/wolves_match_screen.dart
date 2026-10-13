@@ -2,9 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import 'coffee_pup_game_screen.dart';
+import 'coffee_pup_game_service.dart';
 import 'mischief_wall_screen.dart';
 import 'wolves_match_service.dart';
 
@@ -43,6 +46,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
   ];
 
   final WolvesMatchService _service = WolvesMatchService();
+  final CoffeePupGameService _coffeePupGameService = CoffeePupGameService();
   final _displayNameController = TextEditingController();
   final _bioController = TextEditingController();
   Map<String, dynamic>? _state;
@@ -51,6 +55,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
   bool _leaving = false;
   bool _openingWall = false;
   bool _openingIcebreaker = false;
+  String? _startingCoffeePupGame;
   bool _editing = false;
   bool _consent = false;
   bool _radarRunning = true;
@@ -642,10 +647,17 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
           _sectionTitle('INTERÉS ENVIADO', Icons.schedule_outlined),
           ..._profiles('outgoing').map(_outgoingCard),
         ],
-        if (_profiles('connections').isNotEmpty) ...[
-          _sectionTitle('CONEXIONES MUTUAS', Icons.brightness_3_outlined),
+        _sectionTitle(
+          'ROMPEHIELOS Y JUEGOS',
+          Icons.sports_esports_outlined,
+        ),
+        if (_profiles('connections').isEmpty)
+          _emptyState(
+            'Haz una conexión mutua para jugar Trivia Café & Perritos, '
+            'comparar preferencias y usar las preguntas rompehielos.',
+          )
+        else
           ..._profiles('connections').map(_connectionCard),
-        ],
         const SizedBox(height: 10),
         OutlinedButton.icon(
           onPressed:
@@ -1203,6 +1215,30 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
         actions: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            OutlinedButton.icon(
+              onPressed: _startingCoffeePupGame != null
+                  ? null
+                  : () => _startCoffeePupGame(profile, 'trivia'),
+              icon: const Icon(Icons.coffee_outlined, size: 18),
+              label: Text(
+                _startingCoffeePupGame == 'trivia'
+                    ? 'INICIANDO TRIVIA…'
+                    : 'JUGAR TRIVIA · CAFÉ Y PERRITOS',
+              ),
+            ),
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: _startingCoffeePupGame != null
+                  ? null
+                  : () => _startCoffeePupGame(profile, 'preferences'),
+              icon: const Icon(Icons.favorite_outline, size: 18),
+              label: Text(
+                _startingCoffeePupGame == 'preferences'
+                    ? 'INICIANDO JUEGO…'
+                    : 'JUGAR ¿QUÉ PREFIEREN?',
+              ),
+            ),
+            const SizedBox(height: 6),
             FilledButton.icon(
               onPressed: _saving || _openingIcebreaker
                   ? null
@@ -1216,12 +1252,51 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
             ),
             const SizedBox(height: 7),
             const Text(
-              'Respondan y descubran qué eligió la otra persona. Sin puntos ni recompensas.',
+              'Trivia por turnos, cinco dilemas para comparar gustos y '
+              'preguntas secretas para conocerse mejor.',
               style: TextStyle(color: _muted, fontSize: 12),
             ),
           ],
         ),
       );
+
+  Future<void> _startCoffeePupGame(
+    Map<String, dynamic> profile,
+    String gameType,
+  ) async {
+    final peerPublicId = profile['id'] as String?;
+    if (peerPublicId == null || peerPublicId.isEmpty) {
+      _showMessage('No se pudo identificar esta conexión.');
+      return;
+    }
+    setState(() => _startingCoffeePupGame = gameType);
+    try {
+      final sessionId = await _coffeePupGameService.startGame(
+        profileId: peerPublicId,
+        gameType: gameType,
+      );
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => CoffeePupGameScreen(sessionId: sessionId),
+        ),
+      );
+    } on FirebaseFunctionsException catch (error, stackTrace) {
+      debugPrint('No se pudo iniciar el juego Coffee Pup (${error.code}).');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        _showMessage(
+          error.message ?? 'No se pudo iniciar el juego. Inténtalo de nuevo.',
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo iniciar el juego Coffee Pup: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) _showMessage('No se pudo iniciar el juego.');
+    } finally {
+      if (mounted) setState(() => _startingCoffeePupGame = null);
+    }
+  }
 
   Future<void> _openIcebreaker(Map<String, dynamic> profile) async {
     final peerPublicId = profile['id'] as String?;

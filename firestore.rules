@@ -59,6 +59,46 @@ service cloud.firestore {
         && isManagementRole(databaseRole());
     }
 
+    function validPackLegacyProfile(data) {
+      return data.keys().hasOnly([
+          'memberName', 'petName', 'petBreed', 'story', 'achievements',
+          'experienceTitle', 'experienceDescription', 'photoUrl',
+          'published', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'memberName', 'petName', 'petBreed', 'story', 'achievements',
+          'experienceTitle', 'experienceDescription', 'photoUrl',
+          'published', 'createdAt', 'updatedAt'
+        ])
+        && data.memberName is string
+        && data.memberName.size() > 0
+        && data.memberName.size() <= 80
+        && data.petName is string
+        && data.petName.size() > 0
+        && data.petName.size() <= 80
+        && data.petBreed is string
+        && data.petBreed.size() > 0
+        && data.petBreed.size() <= 80
+        && data.story is string
+        && data.story.size() > 0
+        && data.story.size() <= 3000
+        && data.achievements is list
+        && data.achievements.size() <= 12
+        && data.experienceTitle is string
+        && data.experienceTitle.size() <= 120
+        && data.experienceDescription is string
+        && data.experienceDescription.size() <= 1200
+        && data.photoUrl is string
+        && data.photoUrl.size() <= 1000
+        && (
+          data.photoUrl.size() == 0
+          || data.photoUrl.matches('^https://.*$')
+        )
+        && data.published is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     function isVerifiedStaff() {
       return request.auth != null
         && request.auth.token.email_verified == true
@@ -826,6 +866,24 @@ service cloud.firestore {
           + request.auth.uid
         && request.resource.data.createdAt == request.time;
       allow update, delete: if false;
+    }
+
+    match /packLegacyProfiles/{profileId} {
+      allow get, list: if isAdmin() || resource.data.published == true;
+      allow create: if isAdmin()
+        && validPackLegacyProfile(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isAdmin()
+        && validPackLegacyProfile(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'memberName', 'petName', 'petBreed', 'story', 'achievements',
+          'experienceTitle', 'experienceDescription', 'photoUrl',
+          'published', 'updatedAt'
+        ])
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
     }
 
     match /coffeePupProfiles/{userId} {
