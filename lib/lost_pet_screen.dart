@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'garra_icon.dart';
 import 'lost_pet_service.dart';
 import 'profile_creation_form.dart' show compressProfileImageBytes;
 
@@ -624,7 +625,11 @@ class _LostPetScreenState extends State<LostPetScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.pets_outlined, color: _gold, size: 34),
+            const WolvesIcon(
+              icon: BrandIcons.garra,
+              color: _gold,
+              size: 34,
+            ),
             const SizedBox(height: 12),
             const Text(
               'Ningún miembro de la Manada debería buscar solo.',
@@ -705,7 +710,7 @@ class _LostPetScreenState extends State<LostPetScreen> {
 
   Widget _quickLink(String label, IconData icon, VoidCallback onPressed) =>
       ActionChip(
-        avatar: Icon(icon, color: _gold, size: 17),
+        avatar: WolvesIcon(icon: icon, color: _gold, size: 17),
         label: Text(label, style: const TextStyle(color: _cream, fontSize: 10)),
         backgroundColor: _background,
         side: BorderSide(color: _gold.withValues(alpha: 0.2)),
@@ -870,7 +875,7 @@ class _LostPetScreenState extends State<LostPetScreen> {
       InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: _muted, fontSize: 12),
-        prefixIcon: Icon(icon, color: _gold, size: 18),
+        prefixIcon: WolvesIcon(icon: icon, color: _gold, size: 18),
         filled: true,
         fillColor: _background,
         isDense: true,
@@ -904,7 +909,7 @@ class _LostPetScreenState extends State<LostPetScreen> {
           _EmptyState(
             icon: _section == 'reunited'
                 ? Icons.favorite_border
-                : Icons.pets_outlined,
+                : BrandIcons.garra,
             title: _section == 'reunited'
                 ? 'Aún no hay historias para celebrar'
                 : noResultsAfterFiltering
@@ -1139,7 +1144,11 @@ class _LostPetScreenState extends State<LostPetScreen> {
         height: 180,
         width: double.infinity,
         color: const Color(0xFF302820),
-        child: const Icon(Icons.pets_outlined, color: _gold, size: 54),
+        child: const WolvesIcon(
+          icon: BrandIcons.garra,
+          color: _gold,
+          size: 54,
+        ),
       );
 
   Uint8List? _decodePhoto(String source) {
@@ -1172,7 +1181,7 @@ class _LostPetScreenState extends State<LostPetScreen> {
   Widget _metadata(IconData icon, String text) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: _gold, size: 15),
+          WolvesIcon(icon: icon, color: _gold, size: 15),
           const SizedBox(width: 4),
           Flexible(
             child: Text(
@@ -1540,7 +1549,10 @@ class _LostPetScreenState extends State<LostPetScreen> {
                   return Card(
                     color: _panel,
                     child: ListTile(
-                      leading: const Icon(Icons.pets_outlined, color: _gold),
+                      leading: const WolvesIcon(
+                        icon: BrandIcons.garra,
+                        color: _gold,
+                      ),
                       title: Text(
                         'Misión ${_shortId(mission)}',
                         style: const TextStyle(color: _cream),
@@ -3199,7 +3211,11 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: const Color(0xFFC6A06A), size: 42),
+            WolvesIcon(
+              icon: icon,
+              color: const Color(0xFFC6A06A),
+              size: 42,
+            ),
             const SizedBox(height: 12),
             Text(
               title,

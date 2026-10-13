@@ -15,11 +15,9 @@ service cloud.firestore {
     }
 
     function hasManagementOrStaff() {
-      let managementPath =
-        /databases/$(database)/documents/management/$(request.auth.uid);
-      let staffPath =
-        /databases/$(database)/documents/pos_staff/$(request.auth.uid);
-      return exists(managementPath) || exists(staffPath);
+      return request.auth != null
+        && (exists(/databases/$(database)/documents/management/$(request.auth.uid))
+          || exists(/databases/$(database)/documents/pos_staff/$(request.auth.uid)));
     }
 
     function databaseRole() {

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'collectible_models.dart';
+import 'garra_icon.dart';
 
 class CollectibleAlbumTile extends StatefulWidget {
   const CollectibleAlbumTile({
@@ -101,8 +102,8 @@ class _CollectibleAlbumTileState extends State<CollectibleAlbumTile>
                               ? widget.gold.withValues(alpha: 0.12)
                               : const Color(0xFF171A1B),
                           child: widget.imageAsset == null
-                              ? Icon(
-                                  widget.silhouette,
+                              ? WolvesIcon(
+                                  icon: widget.silhouette,
                                   size: 46,
                                   color: unlocked
                                       ? widget.gold
@@ -112,8 +113,8 @@ class _CollectibleAlbumTileState extends State<CollectibleAlbumTile>
                                   widget.imageAsset!,
                                   fit: BoxFit.cover,
                                   errorBuilder: (context, error, stackTrace) =>
-                                      Icon(
-                                    widget.silhouette,
+                                      WolvesIcon(
+                                    icon: widget.silhouette,
                                     size: 46,
                                     color: unlocked
                                         ? widget.gold

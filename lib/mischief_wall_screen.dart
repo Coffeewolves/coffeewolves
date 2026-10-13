@@ -11,6 +11,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 
+import 'garra_icon.dart';
 import 'interstitial_ads_service.dart';
 import 'mischief_wall_service.dart';
 import 'profile_creation_form.dart' show compressProfileImageBytes;
@@ -315,7 +316,7 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
     final selected = _feedSort == value;
     return ChoiceChip(
       selected: selected,
-      avatar: Icon(icon, size: 16),
+      avatar: WolvesIcon(icon: icon, size: 16),
       label: Text(label),
       labelStyle: TextStyle(
         color: selected ? _background : _cream,
@@ -335,7 +336,11 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.pets, color: _gold, size: 54),
+            const WolvesIcon(
+              icon: BrandIcons.garra,
+              color: _gold,
+              size: 54,
+            ),
             const SizedBox(height: 14),
             const Text(
               '¡El muro está listo para la primera travesura!',
@@ -398,7 +403,10 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
               children: [
                 const CircleAvatar(
                   backgroundColor: Color(0xFF3B3128),
-                  child: Icon(Icons.pets, color: _gold),
+                  child: const WolvesIcon(
+                    icon: BrandIcons.garra,
+                    color: _gold,
+                  ),
                 ),
                 const SizedBox(width: 11),
                 Expanded(

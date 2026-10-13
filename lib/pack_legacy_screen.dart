@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'garra_icon.dart';
+
 class PackLegacyScreen extends StatefulWidget {
   const PackLegacyScreen({
     super.key,
@@ -472,7 +474,11 @@ class _PackLegacyScreenState extends State<PackLegacyScreen> {
         height: 150,
         color: const Color(0xFF292D31),
         child: const Center(
-          child: Icon(Icons.pets_outlined, color: _gold, size: 54),
+          child: const WolvesIcon(
+            icon: BrandIcons.garra,
+            color: _gold,
+            size: 54,
+          ),
         ),
       );
 }

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'coffee_pup_game_service.dart';
+import 'garra_icon.dart';
 import 'rewarded_ads_service.dart';
 
 class CoffeePupGameScreen extends StatefulWidget {
@@ -206,7 +207,7 @@ class _CoffeePupGameScreenState extends State<CoffeePupGameScreen> {
         id: 'pup_expert',
         title: 'Experto perruno',
         subtitle: '3 trivias de perritos',
-        icon: Icons.pets,
+        icon: BrandIcons.garra,
       ),
       (
         id: 'five_streak',
@@ -330,8 +331,8 @@ class _CoffeePupGameScreenState extends State<CoffeePupGameScreen> {
                               0.2126, 0.7152, 0.0722, 0, 0,
                               0, 0, 0, 1, 0,
                             ]),
-                      child: Icon(
-                        medal.icon,
+                      child: WolvesIcon(
+                        icon: medal.icon,
                         size: 31,
                         color: unlocked
                             ? const Color(0xFFC28B36)
@@ -555,7 +556,11 @@ class _CoffeePupGameScreenState extends State<CoffeePupGameScreen> {
                       children: [
                         Icon(Icons.local_cafe, color: _coffee, size: 30),
                         SizedBox(width: 10),
-                        Icon(Icons.pets, color: _coffee, size: 27),
+                        WolvesIcon(
+                          icon: BrandIcons.garra,
+                          color: _coffee,
+                          size: 27,
+                        ),
                         SizedBox(width: 12),
                         Expanded(
                           child: Text(

@@ -36,6 +36,7 @@ import 'user_roles.dart';
 import 'wolves_match_screen.dart';
 import 'rewarded_ads_service.dart';
 import 'username_registry_service.dart';
+import 'garra_icon.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -470,8 +471,8 @@ class _PackDogCardState extends State<_PackDogCard> {
                         alignment: Alignment.bottomCenter,
                         errorBuilder: (context, error, stackTrace) =>
                             const Center(
-                          child: Icon(
-                            Icons.pets,
+                          child: WolvesIcon(
+                            icon: BrandIcons.garra,
                             color: Color(0xFFC6A06A),
                             size: 56,
                           ),
@@ -558,8 +559,8 @@ class _PackDogCardState extends State<_PackDogCard> {
               child: Image.asset(
                 dog.imageAsset,
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Icons.pets,
+                errorBuilder: (context, error, stackTrace) => const WolvesIcon(
+                  icon: BrandIcons.garra,
                   color: Color(0xFFC6A06A),
                   size: 60,
                 ),
@@ -998,7 +999,7 @@ const _defaultPosFamilies = [
   PosFamily(
     id: 'pet-friendly',
     name: 'PET FRIENDLY',
-    icon: Icons.pets_outlined,
+    icon: BrandIcons.garra,
     categories: ['PET FRIENDLY'],
   ),
 ];
@@ -1336,7 +1337,7 @@ List<ShopProduct> _createShopProducts() => [
         name: 'Hoodie Pet Alfa',
         description:
             'Prenda suave para lomitos, diseñada para libertad de movimiento.',
-        icon: Icons.pets,
+        icon: BrandIcons.garra,
         price: 160,
         stock: 0,
         sizes: {'S': 3, 'M': 4, 'L': 3, 'XL': 2},
@@ -1346,7 +1347,7 @@ List<ShopProduct> _createShopProducts() => [
         category: 'Moda Alfa',
         name: 'Bandana Pet Signature',
         description: 'Accesorio premium para compartir el estilo de la manada.',
-        icon: Icons.pets,
+        icon: BrandIcons.garra,
         price: 55,
         stock: 0,
         sizes: {'S': 5, 'M': 6, 'L': 4, 'XL': 3},
@@ -3991,7 +3992,7 @@ final _defaultCafeMenuItems = <CafeMenuItem>[
       category: 'Pet Friendly',
       description:
           'Gelatina funcional con colágeno para perros, elaborada con ingredientes naturales.',
-      icon: Icons.pets,
+      icon: BrandIcons.garra,
       price: 0,
       stock: 0),
   CafeMenuItem(
@@ -4026,7 +4027,7 @@ final _defaultCafeMenuItems = <CafeMenuItem>[
       category: 'Pet Friendly',
       description:
           'Patitas deshidratadas 100% naturales, fuente de proteína saludable.',
-      icon: Icons.pets,
+      icon: BrandIcons.garra,
       price: 0,
       stock: 0),
   CafeMenuItem(
@@ -4052,7 +4053,7 @@ final _defaultCafeMenuItems = <CafeMenuItem>[
       category: 'Pet Friendly',
       description:
           'Carne deshidratada 100% natural, fuente de proteína saludable.',
-      icon: Icons.pets,
+      icon: BrandIcons.garra,
       price: 0,
       stock: 0),
   CafeMenuItem(
@@ -7180,8 +7181,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               ),
               title: Row(
                 children: [
-                  Icon(
-                    requiredRole == 'admin' ? Icons.pets : Icons.point_of_sale,
+                  WolvesIcon(
+                    icon: requiredRole == 'admin'
+                        ? BrandIcons.garra
+                        : Icons.point_of_sale,
                     color: gold,
                   ),
                   const SizedBox(width: 10),
@@ -7634,7 +7637,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     return OutlinedButton.icon(
       key: key,
       onPressed: onPressed,
-      icon: Icon(icon, size: 18),
+      icon: WolvesIcon(icon: icon, size: 18),
       label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
         foregroundColor: gold,
@@ -9915,7 +9918,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       return SizedBox(
         width: size,
         height: size,
-        child: const Icon(Icons.pets, color: gold),
+        child: const WolvesIcon(icon: BrandIcons.garra, color: gold),
       );
     }
 
@@ -9924,8 +9927,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       width: size,
       height: size,
       fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) => Icon(
-        Icons.pets,
+      errorBuilder: (context, error, stackTrace) => WolvesIcon(
+        icon: BrandIcons.garra,
         color: gold,
         size: size * 0.55,
       ),
@@ -11777,8 +11780,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       destinations: [
         for (final item in destinations)
           NavigationDestination(
-            icon: Icon(item.icon, size: 20),
-            selectedIcon: Icon(item.icon, size: 20, color: gold),
+            icon: WolvesIcon(icon: item.icon, size: 20),
+            selectedIcon: WolvesIcon(icon: item.icon, size: 20, color: gold),
             label: item.label,
           ),
       ],
@@ -12117,7 +12120,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 constraints.maxWidth / 2,
                 constraints.maxHeight / 2,
               );
-              final pawSize = min(50.0, constraints.maxWidth * 0.13);
+              final garraSize = min(50.0, constraints.maxWidth * 0.13);
               final logoSize = min(142.0, constraints.maxWidth * 0.34);
               final runProgress =
                   (_splashController.value / 0.68).clamp(0.0, 1.0);
@@ -12141,10 +12144,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                               (1 - runProgress);
                           return Positioned(
                             left: center.dx -
-                                pawSize / 2 +
+                                garraSize / 2 +
                                 _wolfMotions[i].value.dx * constraints.maxWidth,
                             top: center.dy -
-                                pawSize / 2 +
+                                garraSize / 2 +
                                 _wolfMotions[i].value.dy *
                                     constraints.maxHeight,
                             child: Transform.translate(
@@ -12153,11 +12156,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                                 angle: stride,
                                 child: Transform.scale(
                                   scale: 0.82 + runProgress * 0.18,
-                                  child: Icon(
-                                    Icons.pets,
+                                  child: WolvesIcon(
+                                    icon: BrandIcons.garra,
                                     key: ValueKey('wolf-splash-$i'),
                                     color: gold,
-                                    size: pawSize,
+                                    size: garraSize,
                                     shadows: const [
                                       Shadow(
                                         color: Color(0x66C6A06A),
@@ -12234,7 +12237,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                                       : () => unawaited(
                                             _startSplashSequence(),
                                           ),
-                                  icon: const Icon(Icons.pets, size: 18),
+                                  icon: const WolvesIcon(
+                                    icon: BrandIcons.garra,
+                                    size: 18,
+                                  ),
                                   label: const Text('UNIRSE A LA MANADA'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: gold,
@@ -12604,7 +12610,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           height: height,
           fit: fit,
           errorBuilder: (context, error, stackTrace) =>
-              Icon(fallbackIcon, color: gold),
+              WolvesIcon(icon: fallbackIcon, color: gold),
         );
       }
       if (resolvedImageAsset != null) {
@@ -12614,10 +12620,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           height: height,
           fit: fit,
           errorBuilder: (context, error, stackTrace) =>
-              Icon(fallbackIcon, color: gold),
+              WolvesIcon(icon: fallbackIcon, color: gold),
         );
       }
-      return Icon(fallbackIcon, color: gold);
+      return WolvesIcon(icon: fallbackIcon, color: gold);
     }
 
     final imageDocumentId = 'wolves-shop-$productId';
@@ -12665,7 +12671,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           height: height,
           fit: fit,
           errorBuilder: (context, error, stackTrace) =>
-              Icon(fallbackIcon, color: gold),
+              WolvesIcon(icon: fallbackIcon, color: gold),
         );
       },
     );
@@ -13259,8 +13265,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              family.icon,
+                            WolvesIcon(
+                              icon: family.icon,
                               color: selected ? gold : muted,
                               size: 24,
                             ),
@@ -13689,7 +13695,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }) {
     return OutlinedButton.icon(
       onPressed: onTap,
-      icon: Icon(icon, size: 18),
+      icon: WolvesIcon(icon: icon, size: 18),
       label: Text(label),
       style: OutlinedButton.styleFrom(
         foregroundColor: selected ? gold : muted,
@@ -16859,7 +16865,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     return Card(
       color: card,
       child: ListTile(
-        leading: Icon(icon, color: gold),
+        leading: WolvesIcon(icon: icon, color: gold),
         title: Text(
           title,
           style: const TextStyle(
@@ -17273,7 +17279,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           children: [
             Row(
               children: [
-                Icon(icon, color: gold, size: 19),
+                WolvesIcon(icon: icon, color: gold, size: 19),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -17304,7 +17310,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: muted, size: 19),
+      leading: WolvesIcon(icon: icon, color: muted, size: 19),
       title: Text(title, style: const TextStyle(color: cream, fontSize: 12)),
       subtitle: Text(
         description,
@@ -17335,7 +17341,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       ),
       child: Row(
         children: [
-          Icon(icon, color: gold, size: 22),
+          WolvesIcon(icon: icon, color: gold, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -17766,7 +17772,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 shift: shift,
               ),
             ),
-            icon: Icon(icon),
+            icon: WolvesIcon(icon: icon),
             label: Text('ASIGNAR PERSONAL · ${title.replaceAll('TURNO ', '')}'),
           ),
         ],
@@ -21688,7 +21694,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         children: [
           Row(
             children: [
-              Icon(icon, color: gold, size: 20),
+              WolvesIcon(icon: icon, color: gold, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -22673,7 +22679,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   const SizedBox(width: 10),
                   Expanded(
                     child: _quickCard(
-                      Icons.pets,
+                      BrandIcons.garra,
                       'Mis\nmascotas',
                       () => go('pets'),
                     ),
@@ -22745,7 +22751,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 children: [
                   Expanded(
                     child: _quickCard(
-                      Icons.pets_outlined,
+                      BrandIcons.garra,
                       'Lanza tu\naullido',
                       _startMatch,
                     ),
@@ -23130,7 +23136,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     const SizedBox(height: 10),
                     OutlinedButton.icon(
                       onPressed: () => go('lostPet'),
-                      icon: const Icon(Icons.pets_outlined),
+                      icon: const WolvesIcon(icon: BrandIcons.garra),
                       label: const Text('ABRIR ESPACIO DE REENCUENTRO'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: gold,
@@ -23245,7 +23251,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             menuButton: false,
           ),
           const SizedBox(height: 34),
-          const Icon(Icons.pets_outlined, color: gold, size: 48),
+          const WolvesIcon(icon: BrandIcons.garra, color: gold, size: 48),
           const SizedBox(height: 16),
           const Text(
             '¿Cómo quieres expandir tu manada hoy?',
@@ -23619,8 +23625,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                               CircleAvatar(
                                 radius: 39,
                                 backgroundColor: const Color(0xFFF2E4D1),
-                                child:
-                                    Icon(Icons.pets, size: 45, color: accent),
+                                child: WolvesIcon(
+                                  icon: BrandIcons.garra,
+                                  size: 45,
+                                  color: accent,
+                                ),
                               ),
                             ],
                           ),
@@ -23753,7 +23762,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: gold, size: 14),
+          WolvesIcon(icon: icon, color: gold, size: 14),
           const SizedBox(width: 5),
           Text(label, style: const TextStyle(color: white, fontSize: 10)),
         ],
@@ -23814,7 +23823,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         children: [
           Row(
             children: [
-              const Icon(Icons.pets, color: gold, size: 17),
+              const WolvesIcon(
+                icon: BrandIcons.garra,
+                color: gold,
+                size: 17,
+              ),
               const SizedBox(width: 7),
               const Expanded(
                 child: Text(
@@ -27229,7 +27242,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 final entry = entries[index];
                 final silhouette = entry.type == CollectibleAlbumType.cup
                     ? Icons.local_cafe_outlined
-                    : Icons.pets_outlined;
+                    : BrandIcons.garra;
                 final imageAsset = entry.imageAsset ??
                     (entry.unlocked && entry.type == CollectibleAlbumType.plush
                         ? _collectibleFigureAsset(entry.modelCode)
@@ -27910,7 +27923,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               'Álbum Cold Brew',
               () => go('coldBrewAlbum'),
             ),
-            _profileOption(Icons.pets, 'Mis mascotas', () => go('pets')),
+            _profileOption(
+              BrandIcons.garra,
+              'Mis mascotas',
+              () => go('pets'),
+            ),
             _profileOption(
               Icons.local_cafe,
               'Coffee Passport',
@@ -29360,7 +29377,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   Widget _badges() {
     final badges = [
-      ['New Wolf', Icons.pets, true],
+      ['New Wolf', BrandIcons.garra, true],
       ['Coffee Lover', Icons.coffee, true],
       ['Pet Lover', Icons.favorite, true],
       ['Explorer', Icons.explore, false],
@@ -29399,8 +29416,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      badge[1] as IconData,
+                    WolvesIcon(
+                      icon: badge[1] as IconData,
                       color: badge[2] as bool ? cream : muted,
                       size: 33,
                     ),
@@ -29541,13 +29558,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             iconAsset: 'assets/images/menu_icons/pack.png',
           ),
           _profileOption(
-            Icons.pets_outlined,
+            BrandIcons.garra,
             'Hoy nos falta uno',
             () => go('lostPet'),
             iconAsset: 'assets/images/menu_icons/lost_pet.png',
           ),
           _profileOption(
-            Icons.pets_outlined,
+            BrandIcons.garra,
             'Wolves Match - Lanza tu aullido',
             _startMatch,
             iconAsset: 'assets/images/menu_icons/match.png',
@@ -29559,7 +29576,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             iconAsset: 'assets/images/menu_icons/journal.png',
           ),
           _profileOption(
-            Icons.pets,
+            BrandIcons.garra,
             'El Muro de las Travesuras',
             () => go('mischiefWall'),
             iconAsset: 'assets/images/menu_icons/mischief_wall.png',
@@ -29727,8 +29744,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         'assets/images/coffee_wolves_logo.webp',
         key: const ValueKey('coffee-wolves-logo'),
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) =>
-            Icon(Icons.pets, color: cream, size: size * 0.54),
+        errorBuilder: (context, error, stackTrace) => WolvesIcon(
+          icon: BrandIcons.garra,
+          color: cream,
+          size: size * 0.54,
+        ),
       ),
     );
   }
@@ -29759,8 +29779,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           Positioned(
             right: 20,
             bottom: 12,
-            child: Icon(Icons.pets,
-                color: cream.withOpacity(0.16), size: height * 0.5),
+            child: WolvesIcon(
+              icon: BrandIcons.garra,
+              color: cream.withOpacity(0.16),
+              size: height * 0.5,
+            ),
           ),
           Icon(Icons.local_cafe, color: cream, size: height * 0.42),
         ],
@@ -29786,8 +29809,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           Positioned(
             right: 12,
             top: 10,
-            child: Icon(
-              Icons.pets,
+            child: WolvesIcon(
+              icon: BrandIcons.garra,
               color: cream.withValues(alpha: 0.08),
               size: height == null ? 42 : height * 0.45,
             ),
@@ -29795,7 +29818,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(item.icon, color: cream, size: height == null ? 42 : 58),
+              WolvesIcon(
+                icon: item.icon,
+                color: cream,
+                size: height == null ? 42 : 58,
+              ),
               const SizedBox(height: 8),
               const Text(
                 'FOTO PRÓXIMAMENTE',
@@ -30055,7 +30082,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: gold, size: 22),
+            WolvesIcon(icon: icon, color: gold, size: 22),
             const SizedBox(height: 5),
             Text(label,
                 textAlign: TextAlign.center,
@@ -30103,7 +30130,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       child: ListTile(
         onTap: onTap,
         leading: CircleAvatar(
-            backgroundColor: brownDark, child: Icon(icon, color: cream)),
+          backgroundColor: brownDark,
+          child: WolvesIcon(icon: icon, color: cream),
+        ),
         title: Text(title,
             style: const TextStyle(color: white, fontWeight: FontWeight.bold)),
         subtitle: Text('$subtitle\n$date',
@@ -30158,7 +30187,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       onTap: onTap,
       contentPadding: EdgeInsets.zero,
       leading: imageAsset == null
-          ? CircleAvatar(backgroundColor: card, child: Icon(icon, color: gold))
+          ? CircleAvatar(
+              backgroundColor: card,
+              child: WolvesIcon(icon: icon, color: gold),
+            )
           : Image.asset(
               imageAsset,
               width: 62,
@@ -30166,7 +30198,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) => CircleAvatar(
                 backgroundColor: card,
-                child: Icon(icon, color: gold),
+                child: WolvesIcon(icon: icon, color: gold),
               ),
             ),
       title: Text(title,
@@ -30947,7 +30979,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   Widget _quantityButton(IconData icon, VoidCallback onPressed) {
     return IconButton(
       onPressed: onPressed,
-      icon: Icon(icon, color: cream),
+      icon: WolvesIcon(icon: icon, color: cream),
       style: IconButton.styleFrom(
           backgroundColor: card,
           side: const BorderSide(color: Color(0xFF51483F))),
@@ -31004,7 +31036,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           const CircleAvatar(
             radius: 28,
             backgroundColor: brownDark,
-            child: Icon(Icons.pets, color: cream),
+            child: WolvesIcon(icon: BrandIcons.garra, color: cream),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -31043,7 +31075,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       height: 94,
       decoration:
           BoxDecoration(color: card2, borderRadius: BorderRadius.circular(12)),
-      child: const Center(child: Icon(Icons.pets, color: cream, size: 30)),
+      child: const Center(
+        child: WolvesIcon(icon: BrandIcons.garra, color: cream, size: 30),
+      ),
     );
   }
 
@@ -31059,14 +31093,14 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       onTap: onTap,
       contentPadding: EdgeInsets.zero,
       leading: iconAsset == null
-          ? Icon(icon, color: cream)
+          ? WolvesIcon(icon: icon, color: cream)
           : Image.asset(
               iconAsset,
               width: 44,
               height: 44,
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) =>
-                  Icon(icon, color: cream),
+                  WolvesIcon(icon: icon, color: cream),
             ),
       title: Text(label, style: const TextStyle(color: white)),
       trailing: const Icon(Icons.chevron_right, color: muted),
@@ -31184,7 +31218,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         children: [
           Row(
             children: [
-              Icon(icon, color: gold, size: 17),
+              WolvesIcon(icon: icon, color: gold, size: 17),
               const SizedBox(width: 8),
               Text(
                 title,
@@ -31659,7 +31693,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               'Billetera',
               'wallet',
             ),
-            _journalModuleLink(Icons.pets_outlined, 'Mis mascotas', 'pets'),
+            _journalModuleLink(BrandIcons.garra, 'Mis mascotas', 'pets'),
           ],
         ),
       ),
@@ -31681,7 +31715,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: gold, size: 19),
+            WolvesIcon(icon: icon, color: gold, size: 19),
             const SizedBox(height: 5),
             Text(
               label,
@@ -31839,7 +31873,7 @@ class _ColdBrewFigureBadgeState extends State<_ColdBrewFigureBadge>
         'classic' => Icons.coffee,
         'orange' || 'orange_milk' || 'lemon_milk' => Icons.wb_sunny_outlined,
         'nitro' => Icons.local_cafe_outlined,
-        'wolves_milk' => Icons.pets_outlined,
+        'wolves_milk' => BrandIcons.garra,
         'berry_milk' || 'blackberry_milk' => Icons.spa_outlined,
         'pineapple_milk' => Icons.eco_outlined,
         'coconut_milk' => Icons.circle_outlined,
@@ -31947,8 +31981,8 @@ class _ColdBrewFigureBadgeState extends State<_ColdBrewFigureBadge>
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
-                        Icon(
-                          _flavorIcon,
+                        WolvesIcon(
+                          icon: _flavorIcon,
                           color: accent.withValues(
                             alpha: widget.isCollected ? 1 : 0.2,
                           ),

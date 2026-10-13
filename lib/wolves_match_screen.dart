@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 
 import 'coffee_pup_game_screen.dart';
 import 'coffee_pup_game_service.dart';
+import 'garra_icon.dart';
 import 'mischief_wall_screen.dart';
 import 'wolves_match_service.dart';
 
@@ -428,7 +429,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _openingWall ? null : _openMischiefWall,
-            icon: const Icon(Icons.pets_outlined, size: 18),
+            icon: const WolvesIcon(icon: BrandIcons.garra, size: 18),
             label: const Text('EL MURO DE LAS TRAVESURAS'),
             style: OutlinedButton.styleFrom(
               foregroundColor: _gold,
@@ -569,7 +570,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
         const SizedBox(height: 16),
         _stateButton(
           configuring ? 'PREPARA TU AULLIDO' : 'LANZA TU AULLIDO',
-          configuring ? Icons.auto_awesome_outlined : Icons.pets_outlined,
+          configuring ? Icons.auto_awesome_outlined : BrandIcons.garra,
           _beginSetup,
         ),
         const SizedBox(height: 8),
@@ -597,7 +598,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
         const SizedBox(height: 16),
         _stateButton(
           'VOLVER A LA MANADA',
-          Icons.pets_outlined,
+          BrandIcons.garra,
           () => _setParticipation('active'),
         ),
         const SizedBox(height: 12),
@@ -938,7 +939,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _moonCard(
-          icon: Icons.pets_outlined,
+          icon: BrandIcons.garra,
           title: 'Prepara tu aullido',
           body: 'Elige cómo te gustaría conectar. Nada se mostrará en Match '
               'hasta que marques tu consentimiento y actives el perfil.',
@@ -1090,7 +1091,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
         activeColor: _gold,
         title: Row(
           children: [
-            Icon(icon, color: _gold, size: 18),
+            WolvesIcon(icon: icon, color: _gold, size: 18),
             const SizedBox(width: 9),
             Expanded(
               child: Text(
@@ -1248,7 +1249,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
       ),
       child: Row(
         children: [
-          Icon(icon, color: _gold),
+          WolvesIcon(icon: icon, color: _gold),
           const SizedBox(width: 11),
           Expanded(
             child: Column(
@@ -1568,7 +1569,11 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
                   color: _background,
                   border: Border.all(color: _gold.withValues(alpha: 0.7)),
                 ),
-                child: const Icon(Icons.pets_outlined, color: _gold, size: 22),
+                child: const WolvesIcon(
+                  icon: BrandIcons.garra,
+                  color: _gold,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 11),
               Expanded(
@@ -1664,7 +1669,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
                   for (final icon in _achievementIcons(coffeePupAchievements))
                     Padding(
                       padding: const EdgeInsets.only(left: 4),
-                      child: Icon(icon, color: _gold, size: 17),
+                      child: WolvesIcon(icon: icon, color: _gold, size: 17),
                     ),
                 ],
               ),
@@ -1691,7 +1696,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
     const icons = {
       'first_brew': Icons.coffee,
       'coffee_scholar': Icons.workspace_premium,
-      'pup_expert': Icons.pets,
+      'pup_expert': BrandIcons.garra,
       'five_streak': Icons.local_fire_department,
       'match_minds': Icons.favorite,
       'streak_saver': Icons.shield,
@@ -1730,7 +1735,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
             fontWeight: FontWeight.w700,
           ),
         ),
-        icon: Icon(icon, size: 20),
+        icon: WolvesIcon(icon: icon, size: 20),
         label: Text(label),
       ),
     );
@@ -1755,7 +1760,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
       ),
       child: Column(
         children: [
-          Icon(icon, color: _gold, size: 30),
+          WolvesIcon(icon: icon, color: _gold, size: 30),
           const SizedBox(height: 10),
           Text(
             title,
@@ -1781,7 +1786,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
         padding: const EdgeInsets.only(top: 19, bottom: 3),
         child: Row(
           children: [
-            Icon(icon, size: 16, color: _gold),
+            WolvesIcon(icon: icon, size: 16, color: _gold),
             const SizedBox(width: 7),
             Text(
               title,

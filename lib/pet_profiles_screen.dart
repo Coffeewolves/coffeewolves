@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:image/image.dart' as image_codec;
 import 'package:image_picker/image_picker.dart';
 
+import 'garra_icon.dart';
+
 Uint8List _compressPetPhoto(Uint8List sourceBytes) {
   final decoded = image_codec.decodeImage(sourceBytes);
   if (decoded == null) {
@@ -485,7 +487,10 @@ class _PetProfilesScreenState extends State<PetProfilesScreen> {
                   errorBuilder: (_, __, ___) => const SizedBox(
                     width: 72,
                     height: 72,
-                    child: Icon(Icons.pets, color: _cream),
+                    child: const WolvesIcon(
+                      icon: BrandIcons.garra,
+                      color: _cream,
+                    ),
                   ),
                 ),
         ),
@@ -579,7 +584,11 @@ class _PetProfilesScreenState extends State<PetProfilesScreen> {
                     padding: EdgeInsets.symmetric(vertical: 30, horizontal: 18),
                     child: Column(
                       children: [
-                        Icon(Icons.pets, size: 40, color: _gold),
+                        const WolvesIcon(
+                          icon: BrandIcons.garra,
+                          size: 40,
+                          color: _gold,
+                        ),
                         SizedBox(height: 10),
                         Text(
                           'AÚN NO HAY PERFILES DE MASCOTAS',
@@ -638,7 +647,10 @@ class _PetProfilesScreenState extends State<PetProfilesScreen> {
                   backgroundImage:
                       photoUrls.isEmpty ? null : NetworkImage(photoUrls.first),
                   child: photoUrls.isEmpty
-                      ? const Icon(Icons.pets, color: _cream)
+                      ? const WolvesIcon(
+                          icon: BrandIcons.garra,
+                          color: _cream,
+                        )
                       : null,
                 ),
                 const SizedBox(width: 12),
