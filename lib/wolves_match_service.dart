@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -225,7 +226,17 @@ class WolvesMatchService {
       throw StateError('El perfil de WOLVES MATCH no tiene identificador.');
     }
     if (participant['status'] == 'active') {
-      await _publishLegacyProfile(participantRef, publicId);
+      unawaited(
+        _publishLegacyProfile(participantRef, publicId).catchError(
+          (Object error, StackTrace stackTrace) {
+            debugPrint(
+              'No se pudo sincronizar el perfil legado de WOLVES MATCH: '
+              '${error.runtimeType}: $error',
+            );
+            debugPrintStack(stackTrace: stackTrace);
+          },
+        ),
+      );
     }
 
     final pairs = await _userPairs(publicId).limit(100).get();

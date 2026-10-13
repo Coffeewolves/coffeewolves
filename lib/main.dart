@@ -28877,7 +28877,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }) {
     final seasonProgress = stamps % 9;
     final season = stamps ~/ 9 + 1;
-    const badgeMilestones = [3, 6, 9];
+    const badgeMilestones = [4, 8, 16];
     return Padding(
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -28962,9 +28962,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     children: badgeMilestones.map((milestone) {
                       final unlocked = stamps >= milestone;
                       final label = switch (milestone) {
-                        3 => 'Explorador · 3',
-                        6 => 'Catador · 6',
-                        _ => 'Insignia máxima · 9',
+                        4 => 'Explorador · 4',
+                        8 => 'Catador · 8',
+                        _ => 'Insignia máxima · 16',
                       };
                       return Chip(
                         avatar: Icon(
@@ -29039,50 +29039,16 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                           crossAxisCount: columns,
                           crossAxisSpacing: 8,
                           mainAxisSpacing: 8,
-                          childAspectRatio: 1.2,
+                          childAspectRatio: 0.92,
                         ),
                         itemBuilder: (context, index) {
                           final figure = coldBrewFigures[index];
                           final isCollected =
                               collectedFigureIds.contains(figure.id);
-                          return Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color:
-                                  isCollected ? const Color(0xFF3A2D16) : card2,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isCollected
-                                    ? gold.withValues(alpha: 0.7)
-                                    : muted.withValues(alpha: 0.2),
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  isCollected
-                                      ? Icons.emoji_food_beverage_outlined
-                                      : Icons.lock_outline,
-                                  color: isCollected ? gold : muted,
-                                  size: 27,
-                                ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  figure.name,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: isCollected ? cream : muted,
-                                    fontSize: 10,
-                                    fontWeight: isCollected
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          return _ColdBrewFigureBadge(
+                            key: ValueKey(figure.id),
+                            figure: figure,
+                            isCollected: isCollected,
                           );
                         },
                       );
@@ -31624,5 +31590,286 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _bitacoraStream = _bitacoraService.watchForOwner(ownerUid);
     }
     return _bitacoraStream!;
+  }
+}
+
+class _ColdBrewFigureBadge extends StatefulWidget {
+  const _ColdBrewFigureBadge({
+    super.key,
+    required this.figure,
+    required this.isCollected,
+  });
+
+  final ColdBrewFigure figure;
+  final bool isCollected;
+
+  @override
+  State<_ColdBrewFigureBadge> createState() => _ColdBrewFigureBadgeState();
+}
+
+class _ColdBrewFigureBadgeState extends State<_ColdBrewFigureBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _spinController;
+
+  static const _gold = Color(0xFFC6A574);
+  static const _cream = Color(0xFFF2E8D8);
+  static const _muted = Color(0xFFADB3B8);
+
+  @override
+  void initState() {
+    super.initState();
+    _spinController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _ColdBrewFigureBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isCollected && widget.isCollected) {
+      _spinController.forward(from: 0);
+    } else if (oldWidget.isCollected && !widget.isCollected) {
+      _spinController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _spinController.dispose();
+    super.dispose();
+  }
+
+  String get _label => switch (widget.figure.id) {
+        'classic' => 'ORIGINAL',
+        'orange' => 'ORANGE',
+        'nitro' => 'NITRO',
+        'wolves_milk' => 'WOLVES',
+        'orange_milk' => 'ORANGE MILK',
+        'berry_milk' => 'BERRY',
+        'pineapple_milk' => 'PINEAPPLE',
+        'coconut_milk' => 'COCONUT',
+        'passion_fruit_milk' => 'PASSION FRUIT',
+        'peach_milk' => 'PEACH',
+        'vanilla_milk' => 'VANILLA',
+        'copoazu_milk' => 'COPOAZU',
+        'lemon_milk' => 'LEMON',
+        'blackberry_milk' => 'BLACKBERRY',
+        'apple_milk' => 'APPLE',
+        'lulo_milk' => 'LULO',
+        _ => widget.figure.name.toUpperCase(),
+      };
+
+  IconData get _flavorIcon => switch (widget.figure.id) {
+        'classic' => Icons.coffee,
+        'orange' || 'orange_milk' || 'lemon_milk' => Icons.wb_sunny_outlined,
+        'nitro' => Icons.local_cafe_outlined,
+        'wolves_milk' => Icons.pets_outlined,
+        'berry_milk' || 'blackberry_milk' => Icons.spa_outlined,
+        'pineapple_milk' => Icons.eco_outlined,
+        'coconut_milk' => Icons.circle_outlined,
+        'passion_fruit_milk' || 'lulo_milk' => Icons.filter_vintage_outlined,
+        'peach_milk' || 'apple_milk' => Icons.apple_outlined,
+        'vanilla_milk' => Icons.local_florist_outlined,
+        'copoazu_milk' => Icons.grain,
+        _ => Icons.emoji_food_beverage_outlined,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _spinController,
+      builder: (context, child) {
+        return Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, 0.001)
+            ..rotateY(2 * pi * _spinController.value),
+          child: child,
+        );
+      },
+      child: _buildMedallion(),
+    );
+  }
+
+  Widget _buildMedallion() {
+    final accent = widget.isCollected ? _gold : _muted;
+    final background =
+        widget.isCollected ? const Color(0xFF21170D) : const Color(0xFF18191A);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final diameter = min(constraints.maxWidth, constraints.maxHeight) * 0.9;
+        return Center(
+          child: SizedBox(
+            width: diameter,
+            height: diameter,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        background,
+                        const Color(0xFF090909),
+                      ],
+                    ),
+                    border: Border.all(
+                      color: accent.withValues(
+                        alpha: widget.isCollected ? 0.95 : 0.35,
+                      ),
+                      width: 2,
+                    ),
+                    boxShadow: widget.isCollected
+                        ? [
+                            BoxShadow(
+                              color: _gold.withValues(alpha: 0.2),
+                              blurRadius: 12,
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: accent.withValues(
+                          alpha: widget.isCollected ? 0.5 : 0.2,
+                        ),
+                      ),
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                Positioned(
+                  top: diameter * 0.15,
+                  left: 4,
+                  right: 4,
+                  child: Text(
+                    'COFFEE WOLVES',
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 8,
+                      letterSpacing: 1.1,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      top: diameter * 0.22,
+                      bottom: diameter * 0.27,
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Icon(
+                          _flavorIcon,
+                          color: accent.withValues(
+                            alpha: widget.isCollected ? 1 : 0.2,
+                          ),
+                          size: diameter * 0.42,
+                        ),
+                        if (!widget.isCollected)
+                          Icon(
+                            Icons.lock_outline,
+                            color: accent.withValues(alpha: 0.95),
+                            size: diameter * 0.2,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: diameter * 0.28,
+                  left: 10,
+                  right: 10,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Icon(Icons.auto_awesome, color: accent, size: 11),
+                      Icon(Icons.auto_awesome, color: accent, size: 11),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  bottom: diameter * 0.2,
+                  left: -5,
+                  right: -5,
+                  child: Container(
+                    height: diameter * 0.22,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: widget.isCollected
+                            ? const [
+                                Color(0xFF8B642F),
+                                Color(0xFFE0BD78),
+                                Color(0xFF8B642F),
+                              ]
+                            : const [
+                                Color(0xFF353535),
+                                Color(0xFF55504A),
+                                Color(0xFF353535),
+                              ],
+                      ),
+                      border: Border.all(
+                        color: accent.withValues(
+                          alpha: widget.isCollected ? 0.95 : 0.35,
+                        ),
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          widget.isCollected ? _label : 'POR DESCUBRIR',
+                          maxLines: 1,
+                          style: TextStyle(
+                            color: widget.isCollected
+                                ? const Color(0xFF140F08)
+                                : _cream.withValues(alpha: 0.65),
+                            fontSize: 9,
+                            letterSpacing: 0.7,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: diameter * 0.06,
+                  left: 0,
+                  right: 0,
+                  child: Text(
+                    'COLD BREW',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: accent.withValues(
+                        alpha: widget.isCollected ? 0.9 : 0.45,
+                      ),
+                      fontSize: 7,
+                      letterSpacing: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
