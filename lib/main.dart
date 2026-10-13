@@ -4406,6 +4406,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   bool _authStateReady = false;
   Object? _authStateError;
   int _authStateGeneration = 0;
+  bool _emailVerificationActionInProgress = false;
+  String? _emailVerificationMessage;
   late final RewardAuditService _rewardAuditService;
   late final BusinessOperationsService _businessOperationsService;
   late final MemberCardService _memberCardService;
@@ -5158,7 +5160,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           ? ''
           : '@${userName.toLowerCase().replaceAll(RegExp(r'\s+'), '')}';
       if (user == null &&
-          const {'pos', 'barista', 'baristaAudit', 'admin'}.contains(page)) {
+          const {
+            'pos',
+            'barista',
+            'baristaAudit',
+            'admin',
+            'emailVerification'
+          }.contains(page)) {
         page = 'login';
       }
     });
@@ -5171,7 +5179,6 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       return;
     }
 
-    _subscribeCafeCatalog();
     try {
       await user.reload();
       final activeUser = FirebaseAuth.instance.currentUser;
@@ -5180,6 +5187,29 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           authGeneration != _authStateGeneration) {
         return;
       }
+      if (!activeUser.isAnonymous && !activeUser.emailVerified) {
+        _clearPassportProgress();
+        _clearCafeOrders();
+        _adminFinanceTimeout?.cancel();
+        _adminFinanceUnlocked = false;
+        _adminPosAccessEnabled = false;
+        if (mounted &&
+            authGeneration == _authStateGeneration &&
+            _firebaseUser?.uid == activeUser.uid) {
+          setState(() {
+            _firebaseUser = activeUser;
+            _userRole = 'user';
+            _isLoadingRole = false;
+            _debugRoleBypassActive = false;
+            _walletBalance = 0;
+            if (page != 'plushAuthenticity') {
+              page = 'emailVerification';
+            }
+          });
+        }
+        return;
+      }
+      _subscribeCafeCatalog();
       final role = await _readAuthorizedRole(activeUser);
       final authorizedRole = activeUser.emailVerified ? role : 'user';
       const debugRoleBypassActive = false;
@@ -6132,6 +6162,77 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     unawaited(_completeAuthentication(user));
   }
 
+  Future<void> _handleEmailVerification({required bool resend}) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.isAnonymous) {
+      _showSnackBar('Inicia sesión con tu correo para verificar la cuenta.');
+      return;
+    }
+    setState(() {
+      _emailVerificationActionInProgress = true;
+      _emailVerificationMessage = null;
+    });
+    try {
+      await user.reload();
+      final refreshedUser = FirebaseAuth.instance.currentUser;
+      if (refreshedUser == null || refreshedUser.uid != user.uid) {
+        throw StateError('La sesión terminó. Inicia sesión nuevamente.');
+      }
+      if (refreshedUser.emailVerified) {
+        await _handleAuthState(refreshedUser);
+        if (mounted) {
+          setState(() {
+            _emailVerificationActionInProgress = false;
+            _emailVerificationMessage =
+                'Correo verificado. Ya puedes usar Coffee Wolves.';
+          });
+        }
+        return;
+      }
+      if (resend) {
+        await refreshedUser.sendEmailVerification();
+        if (mounted) {
+          setState(() {
+            _emailVerificationActionInProgress = false;
+            _emailVerificationMessage =
+                'Enviamos el correo de verificación. Revisa también Spam.';
+          });
+        }
+      } else if (mounted) {
+        setState(() {
+          _emailVerificationActionInProgress = false;
+          _emailVerificationMessage =
+              'Todavía no aparece la confirmación. Abre el enlace que te '
+              'enviamos y vuelve a comprobar.';
+        });
+      }
+    } on FirebaseAuthException catch (error, stackTrace) {
+      debugPrint(
+        'No se pudo enviar o comprobar el correo de verificación '
+        '(${error.code}).',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() {
+          _emailVerificationActionInProgress = false;
+          _emailVerificationMessage =
+              'No se pudo completar la verificación (${error.code}). '
+              'Espera un momento e inténtalo de nuevo.';
+        });
+      }
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo comprobar el correo verificado: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() {
+          _emailVerificationActionInProgress = false;
+          _emailVerificationMessage =
+              'No se pudo comprobar la cuenta. Inténtalo de nuevo.';
+        });
+      }
+    }
+  }
+
   void _onProfilePhotoSelected(Uint8List bytes) {
     if (!mounted) return;
     setState(() => _profilePhotoBytes = bytes);
@@ -6141,6 +6242,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     await _handleAuthState(user);
     if (!mounted || FirebaseAuth.instance.currentUser?.uid != user.uid) return;
     if (_isLoadingRole) return;
+    if (!_firebaseUser!.isAnonymous && !_firebaseUser!.emailVerified) return;
     setState(() {
       if (const {'barista', 'cajero'}.contains(_userRole)) {
         _authenticatedBarista = user.displayName?.trim().isNotEmpty == true
@@ -11603,6 +11705,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   Widget _screen() {
     if (page == 'plushAuthenticity') return _plushAuthenticityPage();
+    final authenticatedUser = _firebaseUser;
+    if (authenticatedUser != null &&
+        !authenticatedUser.isAnonymous &&
+        !authenticatedUser.emailVerified) {
+      return _emailVerificationPage();
+    }
     if (page == 'pos' && !_canAccessPos) {
       return const Center(
         child: Text(
@@ -11656,6 +11764,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
       case 'register':
         return _register();
+
+      case 'emailVerification':
+        return _emailVerificationPage();
 
       case 'barista':
         return _baristaMode();
@@ -12036,6 +12147,108 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   Widget _login() {
     return _authPage(ProfileAuthMode.signIn);
+  }
+
+  Widget _emailVerificationPage() {
+    final email = _firebaseUser?.email ?? '';
+    final message = _emailVerificationMessage;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.mark_email_unread_outlined, color: gold, size: 58),
+              const SizedBox(height: 18),
+              const Text(
+                'CONFIRMA TU CORREO',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: gold,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Enviamos un enlace de verificación a $email. Confirma tu '
+                'dirección para acceder a Coffee Wolves. Revisa también la '
+                'carpeta de Spam.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: cream, height: 1.5),
+              ),
+              if (message != null) ...[
+                const SizedBox(height: 14),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: message.startsWith('No se pudo')
+                        ? const Color(0xFFFF8A80)
+                        : const Color(0xFFB8C89A),
+                    height: 1.4,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _emailVerificationActionInProgress
+                      ? null
+                      : () => _handleEmailVerification(resend: false),
+                  icon: _emailVerificationActionInProgress
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.verified_outlined),
+                  label: const Text('YA VERIFIQUÉ MI CORREO'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _emailVerificationActionInProgress
+                      ? null
+                      : () => _handleEmailVerification(resend: true),
+                  icon: const Icon(Icons.mark_email_read_outlined),
+                  label: const Text('REENVIAR CORREO'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _emailVerificationActionInProgress
+                    ? null
+                    : () async {
+                        try {
+                          await FirebaseAuth.instance.signOut();
+                        } on FirebaseAuthException catch (error, stackTrace) {
+                          debugPrint(
+                            'No se pudo cerrar la sesión sin verificar '
+                            '(${error.code}).',
+                          );
+                          debugPrintStack(stackTrace: stackTrace);
+                          if (mounted) {
+                            _showSnackBar(
+                              'No se pudo cerrar la sesión (${error.code}).',
+                            );
+                          }
+                        }
+                      },
+                icon: const Icon(Icons.logout),
+                label: const Text('CERRAR SESIÓN'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ==========================================================

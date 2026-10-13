@@ -544,6 +544,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       _errorMessage = null;
     });
 
+    var verificationEmailSent = false;
     try {
       if (_isRegistering && !await _authenticateOnDeviceIfAvailable()) {
         if (mounted) {
@@ -612,6 +613,17 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
         }
         await user.updateDisplayName(_fullNameController.text.trim());
         await user.reload();
+        final registeredUser = FirebaseAuth.instance.currentUser ?? user;
+        try {
+          await registeredUser.sendEmailVerification();
+          verificationEmailSent = true;
+        } on FirebaseAuthException catch (error, stackTrace) {
+          debugPrint(
+            'La cuenta se creó, pero no se pudo enviar el correo de '
+            'verificación (${error.code}).',
+          );
+          debugPrintStack(stackTrace: stackTrace);
+        }
         try {
           await FirebaseFunctions.instanceFor(region: 'us-central1')
               .httpsCallable('saveBirthdayDetails')
@@ -630,8 +642,27 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
 
       final activeUser = FirebaseAuth.instance.currentUser ?? user;
       final refreshedUser = activeUser;
+      if (!_isRegistering &&
+          !refreshedUser.isAnonymous &&
+          !refreshedUser.emailVerified) {
+        _completeAuthentication(refreshedUser);
+        return;
+      }
       if (_avatarBytes != null) {
         await _moderateAndSaveAvatar(refreshedUser, _avatarBytes!);
+      }
+      if (_isRegistering && !refreshedUser.isAnonymous) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _errorMessage = verificationEmailSent
+                ? 'Cuenta creada. Revisa tu correo y confirma la dirección '
+                    'antes de entrar a Coffee Wolves.'
+                : 'La cuenta se creó, pero no se pudo enviar el correo. '
+                    'Usa el botón para reenviarlo.';
+          });
+        }
+        return;
       }
       if (_isRegistering && _birthdaySyncFailed && mounted) {
         setState(() {
