@@ -39,6 +39,9 @@ class WolvesMatchService {
   CollectionReference<Map<String, dynamic>> get _pairs =>
       _firestore.collection('wolvesMatchPairs');
 
+  CollectionReference<Map<String, dynamic>> _userPairs(String publicId) =>
+      _firestore.collection('wolvesMatchUsers').doc(publicId).collection('pairs');
+
   CollectionReference<Map<String, dynamic>> get _blocks =>
       _firestore.collection('wolvesMatchBlocks');
 
@@ -64,8 +67,7 @@ class WolvesMatchService {
       await _publishLegacyProfile(participantRef, publicId);
     }
 
-    final pairs =
-        await _pairs.where('publicIds', arrayContains: publicId).get();
+    final pairs = await _userPairs(publicId).limit(100).get();
     final relatedIds = <String>{};
     final incoming = <Map<String, dynamic>>[];
     final outgoing = <Map<String, dynamic>>[];
@@ -73,12 +75,8 @@ class WolvesMatchService {
 
     for (final pairSnapshot in pairs.docs) {
       final pair = pairSnapshot.data();
-      final publicIds = (pair['publicIds'] as List<dynamic>? ?? const [])
-          .whereType<String>()
-          .toList();
-      final otherIds = publicIds.where((id) => id != publicId).toList();
-      final otherId = otherIds.isEmpty ? null : otherIds.first;
-      if (otherId == null) continue;
+      final otherId = pair['peerPublicId'] as String?;
+      if (otherId == null || otherId.isEmpty) continue;
       relatedIds.add(otherId);
       if (participant['status'] != 'active') continue;
       final peerSnapshot = await _publicProfiles.doc(otherId).get();
@@ -267,6 +265,14 @@ class WolvesMatchService {
           'mutualAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
+        _writePairViews(
+          transaction,
+          ownId: ownId,
+          peerId: profileId,
+          status: 'mutual',
+          interestFromPublicId:
+              existingPair!['interestFromPublicId'] as String,
+        );
         return 'mutual';
       }
       transaction.set(
@@ -275,11 +281,19 @@ class WolvesMatchService {
           'publicIds': publicIds,
           'status': 'pending',
           'interestFromPublicId': ownId,
+          'decidedByPublicId': ownId,
           'createdAt':
               existingPair?['createdAt'] ?? FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
+      );
+      _writePairViews(
+        transaction,
+        ownId: ownId,
+        peerId: profileId,
+        status: 'pending',
+        interestFromPublicId: ownId,
       );
       return 'pending';
     });
@@ -331,6 +345,13 @@ class WolvesMatchService {
         if (!accept) 'decidedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      _writePairViews(
+        transaction,
+        ownId: ownId,
+        peerId: profileId,
+        status: accept ? 'mutual' : 'declined',
+        interestFromPublicId: pair['interestFromPublicId'] as String,
+      );
     });
   }
 
@@ -372,6 +393,13 @@ class WolvesMatchService {
         },
         SetOptions(merge: true),
       );
+      _writePairViews(
+        transaction,
+        ownId: ownId,
+        peerId: profileId,
+        status: 'declined',
+        interestFromPublicId: ownId,
+      );
     });
   }
 
@@ -405,11 +433,42 @@ class WolvesMatchService {
           'publicIds': _sortedIds(ownId, profileId),
           'status': 'blocked',
           'interestFromPublicId': ownId,
+          'decidedByPublicId': ownId,
           'createdAt': pair?['createdAt'] ?? FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
       );
+      _writePairViews(
+        transaction,
+        ownId: ownId,
+        peerId: profileId,
+        status: 'blocked',
+        interestFromPublicId: ownId,
+      );
+    });
+  }
+
+  void _writePairViews(
+    Transaction transaction, {
+    required String ownId,
+    required String peerId,
+    required String status,
+    required String interestFromPublicId,
+  }) {
+    final pairId = _pairId(ownId, peerId);
+    final updatedAt = FieldValue.serverTimestamp();
+    transaction.set(_userPairs(ownId).doc(pairId), {
+      'peerPublicId': peerId,
+      'status': status,
+      'interestFromPublicId': interestFromPublicId,
+      'updatedAt': updatedAt,
+    });
+    transaction.set(_userPairs(peerId).doc(pairId), {
+      'peerPublicId': ownId,
+      'status': status,
+      'interestFromPublicId': interestFromPublicId,
+      'updatedAt': updatedAt,
     });
   }
 
@@ -449,6 +508,7 @@ class WolvesMatchService {
     if (refreshedUser == null || !refreshedUser.emailVerified) {
       throw StateError('Verifica tu correo para usar WOLVES MATCH.');
     }
+    await refreshedUser.getIdToken(true);
     final account = await _firestore.collection('users').doc(user.uid).get();
     if (!account.exists) {
       throw StateError('Completa tu perfil antes de entrar a WOLVES MATCH.');

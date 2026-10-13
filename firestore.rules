@@ -414,7 +414,6 @@ service cloud.firestore {
       return matchAccountEligible()
         && exists(ownMatchParticipantPath())
         && data.publicIds is list
-        && data.publicIds.size() == 2
         && ownMatchPublicId() in data.publicIds;
     }
 
@@ -3269,9 +3268,48 @@ service cloud.firestore {
         )
           && readableMatchPair(resource.data)
         || canGetMissingMatchPair(pairId);
-      allow list: if readableMatchPair(resource.data);
+      allow list: if false;
       allow create: if canCreateMatchPair(request.resource.data, pairId);
       allow update: if canUpdateMatchPair(request.resource.data, pairId);
+      allow delete: if false;
+    }
+
+    match /wolvesMatchUsers/{publicId}/pairs/{pairId} {
+      function pairPath() {
+        return /databases/$(database)/documents/wolvesMatchPairs/$(pairId);
+      }
+
+      function validPairView(data, sourcePair) {
+        return sourcePair.publicIds is list
+          && sourcePair.publicIds.size() == 2
+          && publicId in sourcePair.publicIds
+          && data.keys().hasOnly([
+            'peerPublicId', 'status', 'interestFromPublicId', 'updatedAt'
+          ])
+          && data.keys().hasAll([
+            'peerPublicId', 'status', 'interestFromPublicId', 'updatedAt'
+          ])
+          && validMatchPublicId(data.peerPublicId)
+          && data.peerPublicId != publicId
+          && data.peerPublicId in sourcePair.publicIds
+          && data.status == sourcePair.status
+          && data.interestFromPublicId == sourcePair.interestFromPublicId
+          && data.updatedAt == request.time
+          && sourcePair.decidedByPublicId == ownMatchPublicId()
+          && sourcePair.updatedAt == request.time;
+      }
+
+      allow get, list: if ownsMatchPublicId(publicId);
+      allow create, update: if matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && get(ownMatchParticipantPath()).data.status == 'active'
+        && existsAfter(pairPath())
+        && ownMatchPublicId()
+          in getAfter(pairPath()).data.publicIds
+        && validPairView(
+          request.resource.data,
+          getAfter(pairPath()).data
+        );
       allow delete: if false;
     }
 
