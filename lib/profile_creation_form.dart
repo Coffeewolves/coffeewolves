@@ -339,9 +339,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       setState(() {
         _isLoading = false;
         _birthdayMarketingConsent = consent;
-        _errorMessage = consent
-            ? 'Aceptaste recibir la invitación de cumpleaños.'
-            : 'Retiraste tu consentimiento para la invitación de cumpleaños.';
+        _errorMessage = null;
       });
     } on FirebaseException catch (error, stackTrace) {
       debugPrint(
