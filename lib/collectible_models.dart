@@ -74,6 +74,20 @@ const collectibleCupMethods = <({String id, String name})>[
   (id: 'nitro-cold-brew', name: 'Nitro Cold Brew'),
 ];
 
+Set<String> collectibleCupMethodIdsFromPassport(Object? completedMethods) {
+  if (completedMethods is! Iterable) return <String>{};
+
+  final passportMethodsByName = {
+    for (final method in collectibleCupMethods)
+      method.name.toLowerCase(): method.id,
+  };
+  return completedMethods
+      .whereType<String>()
+      .map((name) => passportMethodsByName[name.trim().toLowerCase()])
+      .whereType<String>()
+      .toSet();
+}
+
 List<CollectibleAlbumEntry> buildCollectibleAlbum({
   Set<String> ownedModelCodes = const {},
   Set<String> ownedCupMethodIds = const {},

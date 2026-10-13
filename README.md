@@ -219,15 +219,24 @@ El QR no completa el álbum por sí solo; para validar escaneos y desbloquear
 figuras entre dispositivos se necesita un lector en la app cliente y un backend
 con autenticación, caducidad y persistencia.
 
+El álbum autenticado «Mis Colecciones» carga las piezas reclamadas desde
+Firestore y el progreso de métodos desde `passportProgress/{uid}.completedMethods`.
+Los métodos solo se reconocen por los nombres oficiales del Coffee Passport;
+las notas personales de la bitácora no desbloquean figuras. Las tazas requieren
+una pieza validada de la raza y su método completado. El acceso sin sesión o con
+cuenta anónima muestra el aviso de inicio de sesión, no inventario de ejemplo.
+El álbum usa Firestore y assets locales, sin Firebase Storage.
+
+
 ### Demo local de Gift Cards, coleccionables y automatizaciones
 
 El panel oculto de Barista permite crear Gift Cards con saldo en Bs y códigos
 QR únicos durante la sesión. En «Mi perfil → Billetera» se canjea cada código
 una sola vez; el saldo de demostración también se puede aplicar al checkout.
-«Mis Coleccionables» muestra los seis personajes iniciales, sus IDs
-secuenciales (#001, #002, …), los QR y el certificado dorado al reclamar una
-pieza. El panel permite registrar piezas adicionales, asignándoles el siguiente
-ID.
+El flujo local de demostración permite mostrar los seis personajes iniciales,
+sus IDs secuenciales (#001, #002, …), los QR y el certificado dorado al reclamar
+una pieza. El panel permite registrar piezas adicionales, asignándoles el
+siguiente ID.
 
 Las automatizaciones locales muestran el aviso de ausencia tras 14 días sin
 completar una visita del pasaporte, el aviso de recogida al marcar como listo el

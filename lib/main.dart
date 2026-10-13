@@ -29,6 +29,7 @@ import 'profile_creation_form.dart';
 import 'member_card_service.dart';
 import 'product_catalog_service.dart';
 import 'reward_audit_service.dart';
+import 'collectible_album_tile.dart';
 import 'collectible_models.dart';
 import 'payment_api_service.dart';
 import 'user_roles.dart';
@@ -9987,7 +9988,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               const Icon(Icons.qr_code_scanner, color: gold, size: 42),
               const SizedBox(height: 12),
               const Text(
-                'Demo local: ingresa el código impreso junto al QR para simular su lectura.',
+                'Ingresa el código impreso junto al QR para consultar el registro de autenticidad.',
                 style: TextStyle(color: muted),
               ),
               const SizedBox(height: 12),
@@ -24417,36 +24418,42 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             'Coffee Passport',
             'Colecciona métodos y desbloquea recompensas.',
             () => go('passport'),
+            imageAsset: 'assets/images/experience_icons/passport.png',
           ),
           _experienceTile(
             Icons.event,
             'Eventos',
             'Coffee tastings, pet meet-ups y workshops.',
             () => go('events'),
+            imageAsset: 'assets/images/experience_icons/events.png',
           ),
           _experienceTile(
             Icons.flag,
             'Retos diarios',
             'Completa actividades y gana XP.',
             () => go('challenges'),
+            imageAsset: 'assets/images/experience_icons/challenges.png',
           ),
           _experienceTile(
             Icons.workspace_premium,
             'Rewards',
             'Canjea tus puntos y beneficios.',
             () => go('rewards'),
+            imageAsset: 'assets/images/experience_icons/rewards.png',
           ),
           _experienceTile(
             Icons.emoji_events,
             'Badges',
             'Colecciona insignias Wolves.',
             () => go('badges'),
+            imageAsset: 'assets/images/experience_icons/badges.png',
           ),
           _experienceTile(
             Icons.bar_chart,
             'Estadísticas',
             'Mira tu evolución en la manada.',
             () => go('stats'),
+            imageAsset: 'assets/images/experience_icons/stats.png',
           ),
         ],
       ),
@@ -26893,178 +26900,35 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }
 
   Widget _collectibles() {
-    final customerUid = _firebaseUser?.uid;
-    if (customerUid != null) {
-      return _authenticatedCollectibles(customerUid);
-    }
-    final owned = _collectiblePlushes
-        .where((plush) => plush.claimedBy == userName)
-        .toList()
-      ..sort((first, second) => first.serial.compareTo(second.serial));
-    final available = _collectiblePlushes
-        .where((plush) => plush.claimedBy == null)
-        .toList()
-      ..sort((first, second) => first.serial.compareTo(second.serial));
-    return Padding(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _topBar(
-            title: 'MIS COLECCIONABLES',
-            backButton: true,
-            menuButton: false,
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: const Color(0xFF12100E),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: gold.withValues(alpha: 0.65)),
+    final customer = FirebaseAuth.instance.currentUser;
+    if (customer == null || customer.isAnonymous) {
+      return Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: [
+            _topBar(
+              title: 'MIS COLECCIONES',
+              backButton: true,
+              menuButton: false,
             ),
-            child: const Column(
-              children: [
-                Icon(Icons.workspace_premium, color: gold, size: 42),
-                SizedBox(height: 10),
-                Text(
-                  'PIEZAS ÚNICAS. HISTORIAS AUTÉNTICAS.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: gold,
-                    fontSize: 12,
-                    letterSpacing: 1.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                SizedBox(height: 7),
-                Text(
-                  'Cada peluche tiene un número de serie y un certificado digital irrepetible.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: muted, height: 1.45, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          _collectibleAlbumCatalog(
-            ownedModelCodes: owned.map((plush) => plush.modelCode).toSet(),
-          ),
-          if (_plushCollectionOutOfStock) ...[
+            const SizedBox(height: 28),
+            const Icon(Icons.lock_outline, color: gold, size: 42),
             const SizedBox(height: 12),
-            _stockBadge(),
-          ],
-          const SizedBox(height: 16),
-          _outlineButton(
-            'ESCANEAR QR DEL PELUCHE',
-            _showCollectibleScannerDialog,
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'TUS PIEZAS AUTENTICADAS · ${owned.length}',
-            style: const TextStyle(
-              color: gold,
-              fontSize: 12,
-              letterSpacing: 1,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (owned.isEmpty)
             const Text(
-              'Aún no has reclamado un coleccionable. Escanea el QR de tu peluche para emitir su certificado.',
+              'Inicia sesión para ver tu álbum',
+              style: TextStyle(color: cream, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Tus piezas y avances se cargan de forma privada desde Firestore.',
+              textAlign: TextAlign.center,
               style: TextStyle(color: muted, height: 1.45),
-            )
-          else
-            ...owned.map(
-              (plush) => Card(
-                color: card,
-                child: ListTile(
-                  leading: const Icon(Icons.verified, color: gold),
-                  title: Text(
-                    '${plush.character} · ${plush.formattedSerial}',
-                    style: const TextStyle(color: white),
-                  ),
-                  subtitle: const Text(
-                    'Certificado original verificado',
-                    style: TextStyle(color: muted),
-                  ),
-                  trailing: const Icon(Icons.arrow_forward_ios,
-                      color: gold, size: 15),
-                  onTap: () {
-                    setState(() => _selectedCollectibleCode = plush.code);
-                    go('collectibleCertificate');
-                  },
-                ),
-              ),
             ),
-          const SizedBox(height: 20),
-          const Text(
-            'CÓDIGOS DE DEMOSTRACIÓN',
-            style: TextStyle(
-              color: cream,
-              fontSize: 11,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...available.map(
-            (plush) => Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: card,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF494139)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(5),
-                    color: Colors.white,
-                    child: QrImageView(
-                      data: plush.code,
-                      size: 70,
-                      backgroundColor: Colors.white,
-                      padding: EdgeInsets.zero,
-                    ),
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '${plush.character} ${plush.formattedSerial}',
-                          style: const TextStyle(
-                            color: gold,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(plush.code,
-                            style: const TextStyle(color: muted, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Simular escaneo',
-                    onPressed: () => _claimCollectible(plush.code),
-                    icon: const Icon(Icons.qr_code_scanner, color: gold),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'DEMO LOCAL · Los reclamos se bloquean solo en esta sesión. La cámara no está conectada.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: muted, fontSize: 11, height: 1.5),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
+    }
+    return _authenticatedCollectibles(customer.uid);
   }
 
   Widget _authenticatedCollectibles(String customerUid) {
@@ -27077,7 +26941,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             child: Column(
               children: [
                 _topBar(
-                  title: 'MIS COLECCIONABLES',
+                  title: 'MIS COLECCIONES',
                   backButton: true,
                   menuButton: false,
                 ),
@@ -27098,115 +26962,144 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         final collectibles = snapshot.data!.coleccionables;
         final ownedModelCodes =
             collectibles.map((collectible) => collectible.modelCode).toSet();
-        final ownedCupMethodIds = <String>{};
-        for (final collectible in collectibles) {
-          if (!collectible.modelCode.startsWith('CW-CUP-')) continue;
-          final details =
-              '${collectible.character} ${collectible.notes}'.toLowerCase();
-          for (final method in collectibleCupMethods) {
-            if (details.contains(method.id) ||
-                details.contains(method.name.toLowerCase())) {
-              ownedCupMethodIds.add(method.id);
-            }
-          }
-        }
-        return Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _topBar(
-                title: 'MIS COLECCIONABLES',
-                backButton: true,
-                menuButton: false,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'BITÁCORA · ${collectibles.length} PIEZAS AUTENTICADAS',
-                style: const TextStyle(
-                  color: gold,
-                  fontSize: 12,
-                  letterSpacing: 1,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 14),
-              _collectibleAlbumCatalog(
-                ownedModelCodes: ownedModelCodes,
-                ownedCupMethodIds: ownedCupMethodIds,
-              ),
-              const SizedBox(height: 14),
-              if (collectibles.isEmpty)
-                const Text(
-                  'Aún no hay peluches validados para tu cuenta. Presenta '
-                  'tu ID de miembro al personal en el TPV.',
-                  style: TextStyle(color: muted, height: 1.45),
-                )
-              else
-                ...collectibles.map((collectible) {
-                  final serialLabel = collectible.serial.isEmpty
-                      ? collectible.code
-                      : '#${collectible.serial}';
-                  final title = collectible.nickname.trim().isEmpty
-                      ? collectible.character
-                      : '${collectible.nickname} · ${collectible.character}';
-                  return Card(
-                    color: card,
-                    child: ListTile(
-                      leading: _collectibleFigureImage(
-                        modelCode: collectible.modelCode,
-                        inColor: true,
-                        size: 56,
-                      ),
-                      title: Text(
-                        '$title · $serialLabel',
-                        style: const TextStyle(color: white),
-                      ),
-                      subtitle: Text(
-                        '${collectible.code} · ${collectible.notes.isEmpty ? 'Coleccionable autenticado' : collectible.notes}',
-                        style: const TextStyle(color: muted, fontSize: 11),
-                      ),
-                      onTap: () {
-                        setState(
-                          () => _selectedCollectibleCode = collectible.code,
-                        );
-                        go('collectibleCertificate');
-                      },
-                      trailing: Wrap(
-                        spacing: 0,
-                        children: [
-                          IconButton(
-                            key: ValueKey(
-                              'toggle-bitacora-favorite-${collectible.code}',
-                            ),
-                            tooltip: collectible.isFavorite
-                                ? 'Quitar de favoritos'
-                                : 'Marcar como favorito',
-                            onPressed: () =>
-                                _toggleBitacoraFavorite(collectible),
-                            icon: Icon(
-                              collectible.isFavorite
-                                  ? Icons.star
-                                  : Icons.star_border,
-                              color: gold,
-                            ),
-                          ),
-                          IconButton(
-                            key: ValueKey(
-                              'edit-bitacora-${collectible.code}',
-                            ),
-                            tooltip: 'Editar bitácora',
-                            onPressed: () =>
-                                _editBitacoraCollectible(collectible),
-                            icon: const Icon(Icons.edit_outlined, color: muted),
-                          ),
-                        ],
-                      ),
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('passportProgress')
+              .doc(customerUid)
+              .snapshots(),
+          builder: (context, passportSnapshot) {
+            if (passportSnapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  children: [
+                    _topBar(
+                      title: 'MIS COLECCIONES',
+                      backButton: true,
+                      menuButton: false,
                     ),
-                  );
-                }),
-            ],
-          ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'No se pudo cargar el progreso del Pasaporte.',
+                      style: TextStyle(color: Color(0xFFFF8A80)),
+                    ),
+                  ],
+                ),
+              );
+            }
+            if (!passportSnapshot.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(color: gold),
+              );
+            }
+            final ownedCupMethodIds = collectibleCupMethodIdsFromPassport(
+              passportSnapshot.data?.data()?['completedMethods'],
+            );
+            return Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _topBar(
+                    title: 'MIS COLECCIONES',
+                    backButton: true,
+                    menuButton: false,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'BITÁCORA · ${collectibles.length} PIEZAS AUTENTICADAS',
+                    style: const TextStyle(
+                      color: gold,
+                      fontSize: 12,
+                      letterSpacing: 1,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  _collectibleAlbumCatalog(
+                    ownedModelCodes: ownedModelCodes,
+                    ownedCupMethodIds: ownedCupMethodIds,
+                  ),
+                  const SizedBox(height: 14),
+                  _outlineButton(
+                    'CONSULTAR CÓDIGO DE COLECCIONABLE',
+                    _showCollectibleScannerDialog,
+                  ),
+                  const SizedBox(height: 14),
+                  if (collectibles.isEmpty)
+                    const Text(
+                      'Aún no hay peluches validados para tu cuenta. Presenta '
+                      'tu ID de miembro al personal en el TPV.',
+                      style: TextStyle(color: muted, height: 1.45),
+                    )
+                  else
+                    ...collectibles.map((collectible) {
+                      final serialLabel = collectible.serial.isEmpty
+                          ? collectible.code
+                          : '#${collectible.serial}';
+                      final title = collectible.nickname.trim().isEmpty
+                          ? collectible.character
+                          : '${collectible.nickname} · ${collectible.character}';
+                      return Card(
+                        color: card,
+                        child: ListTile(
+                          leading: _collectibleFigureImage(
+                            modelCode: collectible.modelCode,
+                            inColor: true,
+                            size: 56,
+                          ),
+                          title: Text(
+                            '$title · $serialLabel',
+                            style: const TextStyle(color: white),
+                          ),
+                          subtitle: Text(
+                            '${collectible.code} · ${collectible.notes.isEmpty ? 'Coleccionable autenticado' : collectible.notes}',
+                            style: const TextStyle(color: muted, fontSize: 11),
+                          ),
+                          onTap: () {
+                            setState(
+                              () => _selectedCollectibleCode = collectible.code,
+                            );
+                            go('collectibleCertificate');
+                          },
+                          trailing: Wrap(
+                            spacing: 0,
+                            children: [
+                              IconButton(
+                                key: ValueKey(
+                                  'toggle-bitacora-favorite-${collectible.code}',
+                                ),
+                                tooltip: collectible.isFavorite
+                                    ? 'Quitar de favoritos'
+                                    : 'Marcar como favorito',
+                                onPressed: () =>
+                                    _toggleBitacoraFavorite(collectible),
+                                icon: Icon(
+                                  collectible.isFavorite
+                                      ? Icons.star
+                                      : Icons.star_border,
+                                  color: gold,
+                                ),
+                              ),
+                              IconButton(
+                                key: ValueKey(
+                                  'edit-bitacora-${collectible.code}',
+                                ),
+                                tooltip: 'Editar bitácora',
+                                onPressed: () =>
+                                    _editBitacoraCollectible(collectible),
+                                icon: const Icon(Icons.edit_outlined,
+                                    color: muted),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -27256,8 +27149,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         const Padding(
           padding: EdgeInsets.only(bottom: 18),
           child: Text(
-            'Las tazas se desbloquean cuando la bitácora registra tanto la raza '
-            'como el método de preparación.',
+            'Las tazas se desbloquean al validar la pieza de esa raza y completar '
+            'el método correspondiente en tu Coffee Passport.',
             style: TextStyle(color: muted, fontSize: 10, height: 1.4),
           ),
         ),
@@ -27326,97 +27219,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     ? Icons.local_cafe_outlined
                     : Icons.pets_outlined;
                 final imageAsset = entry.imageAsset ??
-                    (entry.unlocked &&
-                            entry.type == CollectibleAlbumType.plush
+                    (entry.unlocked && entry.type == CollectibleAlbumType.plush
                         ? _collectibleFigureAsset(entry.modelCode)
                         : null);
-                return Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: entry.unlocked
-                          ? gold.withValues(alpha: 0.7)
-                          : const Color(0xFF494139),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: Semantics(
-                          label:
-                              '${entry.name}, ${entry.unlocked ? 'desbloqueada' : 'por descubrir'}',
-                          child: Stack(
-                            fit: StackFit.expand,
-                            alignment: Alignment.center,
-                            children: [
-                              if (imageAsset != null)
-                                Image.asset(
-                                  imageAsset,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      Icon(
-                                    silhouette,
-                                    size: 54,
-                                    color: entry.unlocked ? gold : card2,
-                                  ),
-                                )
-                              else
-                                Icon(
-                                  silhouette,
-                                  size: 54,
-                                  color: entry.unlocked
-                                      ? gold.withValues(alpha: 0.9)
-                                      : const Color(0xFF45494B),
-                                ),
-                              if (!entry.unlocked)
-                                Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.all(7),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF171A1B)
-                                          .withValues(alpha: 0.92),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: muted.withValues(alpha: 0.35),
-                                      ),
-                                    ),
-                                    child: const Icon(
-                                      Icons.lock_outline,
-                                      color: cream2,
-                                      size: 19,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        entry.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: cream,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        entry.unlocked ? 'DESBLOQUEADA' : 'POR DESCUBRIR',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: entry.unlocked ? gold : muted,
-                          fontSize: 8,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                    ],
-                  ),
+                return CollectibleAlbumTile(
+                  entry: entry,
+                  silhouette: silhouette,
+                  cardColor: card,
+                  gold: gold,
+                  cream: cream,
+                  muted: muted,
+                  lockedColor: const Color(0xFF45494B),
+                  imageAsset: imageAsset,
                 );
               },
             );
@@ -27798,7 +27612,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             )
           else
             _outlineButton(
-              'VOLVER A MIS COLECCIONABLES',
+              'VOLVER A MIS COLECCIONES',
               () => go('collectibles'),
             ),
           const SizedBox(height: 12),
@@ -28076,7 +27890,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             ),
             _profileOption(
               Icons.toys_outlined,
-              'Mis Coleccionables',
+              'Mis Colecciones',
               () => go('collectibles'),
             ),
             _profileOption(
@@ -28463,7 +28277,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       'Mi Bitácora',
                       'Wolves Member Card',
                       'Billetera',
-                      'Mis Coleccionables',
+                      'Mis Colecciones',
                       'Álbum Cold Brew',
                       'Mis Mascotas',
                       'Mis Pedidos',
@@ -29684,54 +29498,89 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             ),
           ),
           const SizedBox(height: 24),
-          _profileOption(Icons.home_outlined, 'Inicio', () => go('home')),
-          _profileOption(Icons.groups_outlined, 'Manada', () => go('pack')),
+          _profileOption(
+            Icons.home_outlined,
+            'Inicio',
+            () => go('home'),
+            iconAsset: 'assets/images/menu_icons/home.png',
+          ),
+          _profileOption(
+            Icons.groups_outlined,
+            'Manada',
+            () => go('pack'),
+            iconAsset: 'assets/images/menu_icons/pack.png',
+          ),
           _profileOption(
             Icons.pets_outlined,
             'Hoy nos falta uno',
             () => go('lostPet'),
+            iconAsset: 'assets/images/menu_icons/lost_pet.png',
           ),
           _profileOption(
             Icons.pets_outlined,
             'Wolves Match - Lanza tu aullido',
             _startMatch,
+            iconAsset: 'assets/images/menu_icons/match.png',
           ),
           _profileOption(
             Icons.menu_book_outlined,
             'Mi Bitácora',
             () => go('journal'),
+            iconAsset: 'assets/images/menu_icons/journal.png',
           ),
           _profileOption(
             Icons.pets,
             'El Muro de las Travesuras',
             () => go('mischiefWall'),
+            iconAsset: 'assets/images/menu_icons/mischief_wall.png',
           ),
           _profileOption(
             Icons.auto_stories_outlined,
             'Legado de la Manada',
             () => go('legacy'),
+            iconAsset: 'assets/images/menu_icons/legacy.png',
           ),
-          _profileOption(Icons.local_cafe_outlined, 'Coffee Passport',
-              () => go('passport')),
-          _profileOption(Icons.event_outlined, 'Eventos', () => go('events')),
           _profileOption(
-              Icons.storefront_outlined, 'Wolves Shop', () => go('shop')),
+            Icons.local_cafe_outlined,
+            'Coffee Passport',
+            () => go('passport'),
+            iconAsset: 'assets/images/menu_icons/passport.png',
+          ),
+          _profileOption(
+            Icons.event_outlined,
+            'Eventos',
+            () => go('events'),
+            iconAsset: 'assets/images/menu_icons/events.png',
+          ),
+          _profileOption(
+            Icons.storefront_outlined,
+            'Wolves Shop',
+            () => go('shop'),
+            iconAsset: 'assets/images/menu_icons/shop.png',
+          ),
           _profileOption(
             Icons.local_cafe_outlined,
             'Menú café',
             () => go('cafeMenu'),
+            iconAsset: 'assets/images/menu_icons/cafe_menu.png',
           ),
           _profileOption(
-              Icons.person_outline, 'Mi perfil', () => go('profile')),
+            Icons.person_outline,
+            'Mi perfil',
+            () => go('profile'),
+            iconAsset: 'assets/images/menu_icons/profile.png',
+          ),
           _profileOption(
             Icons.account_balance_wallet_outlined,
             'Billetera',
             () => go('wallet'),
+            iconAsset: 'assets/images/menu_icons/wallet.png',
           ),
           _profileOption(
             Icons.toys_outlined,
-            'Mis Coleccionables',
+            'Mis Colecciones',
             () => go('collectibles'),
+            iconAsset: 'assets/images/menu_icons/collectibles.png',
           ),
         ],
       ),
@@ -30269,12 +30118,27 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }
 
   Widget _experienceTile(
-      IconData icon, String title, String subtitle, VoidCallback onTap) {
+    IconData icon,
+    String title,
+    String subtitle,
+    VoidCallback onTap, {
+    String? imageAsset,
+  }) {
     return ListTile(
       onTap: onTap,
       contentPadding: EdgeInsets.zero,
-      leading:
-          CircleAvatar(backgroundColor: card, child: Icon(icon, color: gold)),
+      leading: imageAsset == null
+          ? CircleAvatar(backgroundColor: card, child: Icon(icon, color: gold))
+          : Image.asset(
+              imageAsset,
+              width: 62,
+              height: 62,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => CircleAvatar(
+                backgroundColor: card,
+                child: Icon(icon, color: gold),
+              ),
+            ),
       title: Text(title,
           style: const TextStyle(color: white, fontWeight: FontWeight.bold)),
       subtitle: Text(subtitle, style: const TextStyle(color: muted)),
@@ -31153,11 +31017,25 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     );
   }
 
-  Widget _profileOption(IconData icon, String label, VoidCallback onTap) {
+  Widget _profileOption(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    String? iconAsset,
+  }) {
     return ListTile(
       onTap: onTap,
       contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: cream),
+      leading: iconAsset == null
+          ? Icon(icon, color: cream)
+          : Image.asset(
+              iconAsset,
+              width: 44,
+              height: 44,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) =>
+                  Icon(icon, color: cream),
+            ),
       title: Text(label, style: const TextStyle(color: white)),
       trailing: const Icon(Icons.chevron_right, color: muted),
     );

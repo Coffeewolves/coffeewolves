@@ -52,5 +52,7 @@ flutter:
     - assets/images/desserts/
     - assets/images/hot_drinks/
     - assets/images/menu_official/
+    - assets/images/menu_icons/
+    - assets/images/experience_icons/
     - assets/images/presurizados/
     - assets/images/wolves/

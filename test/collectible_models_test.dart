@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wolves_club/collectible_album_tile.dart';
 import 'package:wolves_club/collectible_models.dart';
 
 void main() {
@@ -46,6 +48,76 @@ void main() {
   });
 
   group('Collectible album catalog', () {
+    testWidgets('spins the circular figure when it becomes unlocked',
+        (tester) async {
+      const lockedEntry = CollectibleAlbumEntry(
+        id: 'cup-pomi-cold-brew',
+        name: 'Cold Brew',
+        breedId: 'pomi',
+        breedName: 'Pomeranian',
+        type: CollectibleAlbumType.cup,
+        modelCode: 'CW-CUP-007',
+        methodId: 'cold-brew',
+        unlocked: false,
+      );
+      const unlockedEntry = CollectibleAlbumEntry(
+        id: 'cup-pomi-cold-brew',
+        name: 'Cold Brew',
+        breedId: 'pomi',
+        breedName: 'Pomeranian',
+        type: CollectibleAlbumType.cup,
+        modelCode: 'CW-CUP-007',
+        methodId: 'cold-brew',
+        unlocked: true,
+      );
+
+      Widget tile(CollectibleAlbumEntry entry) => MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 150,
+                height: 180,
+                child: CollectibleAlbumTile(
+                  entry: entry,
+                  silhouette: Icons.local_cafe_outlined,
+                  cardColor: const Color(0xFF222222),
+                  gold: const Color(0xFFFFD700),
+                  cream: const Color(0xFFFFF8E7),
+                  muted: const Color(0xFFAAAAAA),
+                  lockedColor: const Color(0xFF45494B),
+                ),
+              ),
+            ),
+          );
+
+      await tester.pumpWidget(tile(lockedEntry));
+      await tester.pumpWidget(tile(unlockedEntry));
+      await tester.pump(const Duration(milliseconds: 375));
+
+      final spinTransform = tester.widget<Transform>(
+        find.byKey(
+            const ValueKey('collectible-unlock-spin-cup-pomi-cold-brew')),
+      );
+      expect(spinTransform.transform.storage[0], closeTo(-1, 0.1));
+    });
+
+    test('maps only official Passport method names to album method IDs', () {
+      expect(
+        collectibleCupMethodIdsFromPassport([
+          'Dripper V60',
+          'Cold Brew',
+          ' desconocido ',
+          42,
+        ]),
+        {'dripper-v60', 'cold-brew'},
+      );
+      expect(
+        collectibleCupMethodIdsFromPassport(
+          'Cold Brew',
+        ),
+        isEmpty,
+      );
+    });
+
     test('contains 27 cups and six plushes across the three breeds', () {
       final album = buildCollectibleAlbum();
       final cups = album
