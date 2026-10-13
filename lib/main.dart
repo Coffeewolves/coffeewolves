@@ -4502,6 +4502,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   bool _adminPosAccessEnabled = false;
   bool _debugRoleBypassActive = false;
   bool _isRecordingSale = false;
+  String? _posSaleAttemptId;
   bool _isProcessingBaristaCanje = false;
   bool _cafeOrderSoundEnabled = false;
   bool _cafeOrderAlarmPlaying = false;
@@ -5147,6 +5148,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _isLoadingRole = user != null;
       _debugRoleBypassActive = false;
       _firestoreCafeProductIds.clear();
+      _walletBalance = 0;
       final displayName = user?.displayName?.trim() ?? '';
       final emailName = user?.email?.split('@').first ?? '';
       userName = user == null
@@ -5207,6 +5209,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           page = 'home';
         }
       });
+      if (authorizedRole == 'user') {
+        unawaited(_refreshWalletBalance(activeUser.uid));
+      } else {
+        _walletBalance = 0;
+      }
       if (authorizedRole == 'user') {
         _subscribePassportProgress(activeUser);
       } else {
@@ -6273,6 +6280,30 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _showSnackBar('El efectivo recibido no cubre el total de la venta.');
       return;
     }
+    final paymentMethod = _selectedPaymentMethod;
+    var saleCustomerUid = _customerUidForSale?.trim();
+    if (paymentMethod == 'wallet') {
+      if (saleCustomerUid == null || saleCustomerUid.isEmpty) {
+        _showSnackBar('Ingresa el UID o Wolves Member Card del cliente.');
+        return;
+      }
+      try {
+        saleCustomerUid =
+            await _memberCardService.resolveUserUid(saleCustomerUid);
+      } on FirebaseException catch (error, stackTrace) {
+        debugPrint('No se pudo validar la Member Card: ${error.code}');
+        debugPrintStack(stackTrace: stackTrace);
+        _showSnackBar('No se pudo validar la tarjeta del cliente.');
+        return;
+      } on StateError catch (error) {
+        _showSnackBar(error.message);
+        return;
+      }
+      if (saleCustomerUid.isEmpty || saleCustomerUid.contains('/')) {
+        _showSnackBar('El ID de cliente no es válido.');
+        return;
+      }
+    }
 
     final trackedProducts = <String, int>{};
     final trackedShopProducts = <String, int>{};
@@ -6330,12 +6361,15 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     setState(() => _isRecordingSale = true);
     try {
       final paidAt = DateTime.now();
+      final saleAttemptId = _posSaleAttemptId ??=
+          FirebaseFirestore.instance.collection('cafeSales').doc().id;
       final saleId = await _businessOperationsService.recordSale(
+        saleId: saleAttemptId,
         employeeUid: user.uid,
         employeeEmail: user.email ?? '',
         date: paidAt,
         shift: shift,
-        paymentMethod: _selectedPaymentMethod,
+        paymentMethod: paymentMethod,
         total: total,
         cashReceived: received,
         changeDue: received >= total ? received - total : 0,
@@ -6343,7 +6377,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         trackedProducts: trackedProducts,
         trackedShopProducts: trackedShopProducts,
         trackedShopVariants: trackedShopVariants,
-        customerUid: _customerUidForSale?.trim(),
+        customerUid: saleCustomerUid,
         tableNumber: _selectedPosTableNumber,
       );
       if (!mounted) return;
@@ -6361,6 +6395,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         _customerUidForSale = null;
         _selectedPaymentMethod = 'cash';
         _lastPosSaleId = saleId;
+        _posSaleAttemptId = null;
       });
       try {
         final sellerName = (_activePosBarista ?? _authenticatedBarista).trim();
@@ -6381,7 +6416,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               )
               .toList(growable: false),
           total: total,
-          paymentMethod: _selectedPaymentMethod,
+          paymentMethod: paymentMethod,
           cashReceived: received,
           changeDue: received >= total ? received - total : 0,
         );
@@ -6405,7 +6440,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       debugPrint('No se pudo registrar la venta (${error.code}).');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
-        _showSnackBar('No se pudo guardar la venta (${error.code}).');
+        _showSnackBar(
+          paymentMethod == 'wallet' && error.code == 'permission-denied'
+              ? 'No se pudo cobrar: la billetera no tiene saldo suficiente '
+                  'o no está disponible. No se registró la venta.'
+              : 'No se pudo guardar la venta (${error.code}).',
+        );
       }
     } catch (error, stackTrace) {
       debugPrint('No se pudo registrar la venta: $error');
@@ -8980,6 +9020,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }
 
   Future<void> _showCreateGiftCardDialog() async {
+    if (_userRole != 'admin') {
+      _showBaristaMessage(
+        'Solo Gerencia puede emitir Gift Cards con saldo monetario.',
+      );
+      return;
+    }
     final amountController = TextEditingController();
     String? validationMessage;
     try {
@@ -9133,11 +9179,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             ..redeemedBy = customer.uid
             ..balance = 0;
         }
-        _walletBalance += balance;
+        _walletBalance = balance;
       });
       _showBaristaMessage(
-        'Gift Card canjeada. Se añadieron ${_formatPrice(balance)} '
-        'a tu billetera de esta sesión.',
+        'Gift Card canjeada. Tu saldo disponible es ${_formatPrice(balance)}.',
       );
     } on FirebaseException catch (error, stackTrace) {
       debugPrint('No se pudo canjear la Gift Card: ${error.code}');
@@ -9147,6 +9192,21 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       );
     } on StateError catch (error) {
       _showBaristaMessage(error.message);
+    }
+  }
+
+  Future<void> _refreshWalletBalance(String customerUid) async {
+    try {
+      final balance =
+          await _rewardAuditService.getWalletBalance(customerUid);
+      if (!mounted || _firebaseUser?.uid != customerUid) return;
+      setState(() => _walletBalance = balance);
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo cargar la billetera: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+    } on StateError catch (error, stackTrace) {
+      debugPrint('No se pudo validar la billetera: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 
@@ -13125,6 +13185,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       value: 'card',
                       child: Text('Tarjeta · confirmado por personal'),
                     ),
+                    DropdownMenuItem(
+                      value: 'wallet',
+                      child: Text('Billetera Wolves'),
+                    ),
                   ],
                   onChanged: (method) {
                     if (method != null) {
@@ -13132,7 +13196,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     }
                   },
                 ),
-                if (_selectedPaymentMethod != 'cash') ...[
+                if (_selectedPaymentMethod == 'qr' ||
+                    _selectedPaymentMethod == 'card') ...[
                   const SizedBox(height: 7),
                   const Text(
                     'Confirma solo después de verificar que el pago QR o tarjeta fue recibido; no hay pasarela conectada.',
@@ -13204,19 +13269,31 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 TextField(
                   key: const ValueKey('pos-customer-member-id'),
                   controller: _posCustomerUidController,
-                  decoration: const InputDecoration(
-                    labelText: 'ID de miembro (opcional)',
+                  decoration: InputDecoration(
+                    labelText: _selectedPaymentMethod == 'wallet'
+                        ? 'UID / Wolves Member Card'
+                        : 'ID de miembro (opcional)',
                     prefixIcon: Icon(Icons.badge_outlined, color: gold),
                   ),
                   onChanged: (value) => _customerUidForSale = value,
                 ),
+                if (_selectedPaymentMethod == 'wallet') ...[
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Para pagar con billetera, este campo es obligatorio. '
+                    'Ingresa el UID o el número Wolves Member Card.',
+                    style: TextStyle(color: muted, fontSize: 10, height: 1.4),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 FilledButton.icon(
                   key: const ValueKey('pos-confirm-sale'),
                   onPressed: _isRecordingSale ||
                           total <= 0 ||
                           (_selectedPaymentMethod == 'cash' &&
-                              amountReceived < total)
+                              amountReceived < total) ||
+                          (_selectedPaymentMethod == 'wallet' &&
+                              (_customerUidForSale?.trim().isNotEmpty != true))
                       ? null
                       : _recordPosSale,
                   icon: _isRecordingSale
@@ -13985,17 +14062,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           ),
         ),
         const SizedBox(height: 8),
-        OutlinedButton.icon(
-          key: const ValueKey('create-gift-card'),
-          onPressed: _showCreateGiftCardDialog,
-          icon: const Icon(Icons.card_giftcard),
-          label: const Text('GENERAR GIFT CARD'),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: gold,
-            side: BorderSide(color: gold.withValues(alpha: 0.65)),
-            minimumSize: const Size.fromHeight(48),
+        if (_userRole == 'admin')
+          OutlinedButton.icon(
+            key: const ValueKey('create-gift-card'),
+            onPressed: _showCreateGiftCardDialog,
+            icon: const Icon(Icons.card_giftcard),
+            label: const Text('GENERAR GIFT CARD'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: gold,
+              side: BorderSide(color: gold.withValues(alpha: 0.65)),
+              minimumSize: const Size.fromHeight(48),
+            ),
           ),
-        ),
         if (giftCards.isNotEmpty) ...[
           const SizedBox(height: 10),
           ...giftCards.map(
@@ -25461,16 +25539,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             ),
             const SizedBox(height: 8),
             _outlineButton('PROCEDER AL PAGO', _openPaymentCheckout),
-            if (_paymentIdempotencyKey == null &&
-                !const {'creating', 'pending', 'timeout'}.contains(
-                  _paymentStatus,
-                )) ...[
-              const SizedBox(height: 8),
-              _outlineButton(
-                'PAGAR CON SALDO DE LA MANADA',
-                () => _payWithWallet(total),
-              ),
-            ],
+            const SizedBox(height: 8),
+            const Text(
+              'El saldo de la billetera se descuenta en caja, junto con el '
+              'registro seguro de la venta.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: muted, fontSize: 11, height: 1.4),
+            ),
           ],
         ],
       ),
@@ -25994,37 +26069,6 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     );
   }
 
-  void _payWithWallet(double total) {
-    if (_paymentIdempotencyKey != null) {
-      _showBaristaMessage(
-        'Hay una orden QR pendiente o sin confirmar. Verifica su estado antes de usar el saldo.',
-      );
-      return;
-    }
-    if (total <= 0) {
-      _showBaristaMessage('No hay un pedido para pagar.');
-      return;
-    }
-    if (_walletBalance < total) {
-      _showBaristaMessage(
-        'Saldo insuficiente. Tu billetera tiene ${_formatPrice(_walletBalance)}.',
-      );
-      return;
-    }
-    if (!_consumeShopCartInventory()) return;
-    setState(() {
-      _paymentGeneration++;
-      _walletBalance -= total;
-      _featuredOrderReady = false;
-      _pickupAlertMessage = null;
-      _paymentOrder = null;
-      _paymentStatus = 'wallet-paid';
-      _paymentError = null;
-      cart.clear();
-    });
-    go('success');
-  }
-
   // ==========================================================
   // SUCCESS
   // ==========================================================
@@ -26235,6 +26279,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }
 
   Widget _wallet() {
+    final walletUser = _firebaseUser;
     final redeemedCards = _giftCards.values
         .where((giftCard) => giftCard.redeemedBy == userName)
         .toList()
@@ -26284,15 +26329,45 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   ],
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  _formatPrice(_walletBalance),
-                  key: const ValueKey('wallet-balance'),
-                  style: const TextStyle(
-                    color: white,
-                    fontSize: 34,
-                    fontWeight: FontWeight.w300,
+                if (walletUser == null)
+                  const Text(
+                    'Inicia sesión para consultar tu saldo',
+                    style: TextStyle(color: muted, fontSize: 13),
+                  )
+                else
+                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('wallets')
+                        .doc(walletUser.uid)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      final data = snapshot.data?.data();
+                      final balance = data?['balance'];
+                      final isValid = !snapshot.hasError &&
+                          (!snapshot.hasData ||
+                              !snapshot.data!.exists ||
+                              data?['ownerUid'] == walletUser.uid &&
+                                  balance is num &&
+                                  balance >= 0);
+                      return Text(
+                        snapshot.hasError
+                            ? 'Saldo no disponible'
+                            : !isValid
+                                ? 'Saldo no válido'
+                                : _formatPrice(
+                                    snapshot.data?.exists == true
+                                        ? (balance as num).toDouble()
+                                        : 0,
+                                  ),
+                        key: const ValueKey('wallet-balance'),
+                        style: const TextStyle(
+                          color: white,
+                          fontSize: 34,
+                          fontWeight: FontWeight.w300,
+                        ),
+                      );
+                    },
                   ),
-                ),
                 const SizedBox(height: 4),
                 const Text(
                   'Disponible para consumir en la barra.',
@@ -29658,55 +29733,6 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     _showSnackBar(
       '${product.name}${size == null ? '' : ' · Talle $size'} agregado al carrito.',
     );
-  }
-
-  bool _consumeShopCartInventory() {
-    final requested = <String, int>{};
-    for (final item in cart) {
-      final productId = item['shopProductId'] as String?;
-      if (productId == null) continue;
-      final size = item['size'] as String?;
-      final key = '$productId:${size ?? 'one-size'}';
-      requested.update(
-        key,
-        (quantity) => quantity + (item['qty'] as int),
-        ifAbsent: () => item['qty'] as int,
-      );
-    }
-    for (final entry in requested.entries) {
-      final split = entry.key.split(':');
-      final product = _shopProducts.firstWhere(
-        (item) => item.id == split.first,
-      );
-      final size = split.last == 'one-size' ? null : split.last;
-      final variant = size == null ? null : product.variants[size];
-      final stock = variant?.stock ?? product.stock;
-      final status = variant?.status ?? product.effectiveStatus;
-      if (status != ShopItemStatus.available || stock < entry.value) {
-        _showSnackBar(
-          'Inventario insuficiente para ${product.name}'
-          '${size == null ? '' : ' · talle $size'}. Revisa el carrito.',
-        );
-        return false;
-      }
-    }
-    for (final entry in requested.entries) {
-      final split = entry.key.split(':');
-      final product = _shopProducts.firstWhere(
-        (item) => item.id == split.first,
-      );
-      final size = split.last == 'one-size' ? null : split.last;
-      final variant = size == null ? null : product.variants[size];
-      if (variant == null) {
-        product.stock = product.stock - entry.value;
-      } else {
-        variant.stock = variant.stock - entry.value;
-      }
-      if (product.id == 'plush-alfa') {
-        _plushCollectionOutOfStock = product.stock == 0;
-      }
-    }
-    return true;
   }
 
   Widget _shopProductCard(ShopProduct product) {

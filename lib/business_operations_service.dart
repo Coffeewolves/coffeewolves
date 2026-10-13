@@ -217,13 +217,23 @@ class BusinessOperationsService {
     required double changeDue,
     required List<Map<String, dynamic>> items,
     required Map<String, int> trackedProducts,
+    String? saleId,
     Map<String, int> trackedShopProducts = const {},
     Map<String, Map<String, int>> trackedShopVariants = const {},
     String? customerUid,
     int? tableNumber,
   }) async {
     final key = dateKey(date);
-    final saleRef = _firestore.collection('cafeSales').doc();
+    if (saleId != null && (saleId.isEmpty || saleId.contains('/'))) {
+      throw ArgumentError.value(saleId, 'saleId', 'Debe ser un ID válido.');
+    }
+    final saleRef = _firestore.collection('cafeSales').doc(saleId);
+    final walletRef = paymentMethod == 'wallet' && customerUid != null
+        ? _firestore.collection('wallets').doc(customerUid)
+        : null;
+    final walletTransactionRef = walletRef == null
+        ? null
+        : _firestore.collection('walletTransactions').doc(saleRef.id);
     final cafeItems = items
         .where((item) => item['catalogCollection'] == 'cafeCatalog')
         .toList(growable: false);
@@ -270,6 +280,15 @@ class BusinessOperationsService {
       }
       if (!session.exists || session.data()?['status'] != 'open') {
         throw StateError('Abre la caja antes de registrar ventas.');
+      }
+      if (paymentMethod == 'wallet') {
+        if (customerUid == null ||
+            customerUid.isEmpty ||
+            walletRef == null) {
+          throw StateError(
+            'Debes identificar al cliente para cobrar con billetera.',
+          );
+        }
       }
       for (final saleLine in cafeItems) {
         final productId = saleLine['productId'] as String?;
@@ -414,6 +433,8 @@ class BusinessOperationsService {
         'shopProductQuantities': trackedShopProducts,
         if (trackedShopVariants.isNotEmpty)
           'shopVariantQuantities': trackedShopVariants,
+        if (walletTransactionRef != null)
+          'walletTransactionId': walletTransactionRef.id,
         if (customerUid != null && customerUid.isNotEmpty)
           'customerUid': customerUid,
         'paidAt': FieldValue.serverTimestamp(),
@@ -433,6 +454,23 @@ class BusinessOperationsService {
         'createdAt': FieldValue.serverTimestamp(),
         if (tableNumber != null) 'tableNumber': tableNumber,
       });
+
+      if (walletRef != null && walletTransactionRef != null) {
+        transaction.update(walletRef, {
+          'balance': FieldValue.increment(-total),
+          'updatedAt': FieldValue.serverTimestamp(),
+          'lastTransactionId': walletTransactionRef.id,
+        });
+        transaction.set(walletTransactionRef, {
+          'ownerUid': customerUid,
+          'type': 'posDebit',
+          'direction': 'debit',
+          'amount': total,
+          'saleId': saleRef.id,
+          'employeeUid': employeeUid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
 
       for (final entry in trackedProducts.entries) {
         final reference = _firestore.collection('cafeCatalog').doc(entry.key);

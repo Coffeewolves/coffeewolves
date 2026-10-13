@@ -175,9 +175,7 @@ class RewardAuditService {
         .hasMatch(qrId)) {
       throw ArgumentError.value(qrId, 'qrId', 'El QR de canje no es válido.');
     }
-    if (!distanceMeters.isFinite ||
-        distanceMeters < 0 ||
-        distanceMeters > 50) {
+    if (!distanceMeters.isFinite || distanceMeters < 0 || distanceMeters > 50) {
       throw ArgumentError.value(
         distanceMeters,
         'distanceMeters',
@@ -520,11 +518,22 @@ class RewardAuditService {
     required String code,
     required String customerUid,
   }) async {
+    if (customerUid.isEmpty || customerUid.contains('/')) {
+      throw ArgumentError.value(
+        customerUid,
+        'customerUid',
+        'Debe ser un UID válido.',
+      );
+    }
     final cardRef = _firestore.collection('giftCards').doc(code);
-    var redeemedBalance = 0.0;
+    final walletRef = _firestore.collection('wallets').doc(customerUid);
+    final walletTransactionRef =
+        _firestore.collection('walletTransactions').doc();
+    var walletBalanceAfter = 0.0;
 
     await _firestore.runTransaction((transaction) async {
       final card = await transaction.get(cardRef);
+      final wallet = await transaction.get(walletRef);
       final data = card.data();
       if (!card.exists || data == null || data['status'] != 'active') {
         throw StateError('La Gift Card no existe o ya fue canjeada.');
@@ -533,15 +542,63 @@ class RewardAuditService {
       if (balance is! num || balance <= 0) {
         throw StateError('La Gift Card no tiene saldo disponible.');
       }
-      redeemedBalance = balance.toDouble();
+      final currentWallet = wallet.data();
+      final currentBalance = currentWallet?['balance'];
+      if (wallet.exists &&
+          (currentWallet?['ownerUid'] != customerUid ||
+              currentBalance is! num ||
+              currentBalance < 0)) {
+        throw StateError('La billetera del cliente no es válida.');
+      }
+      final walletBalanceBefore =
+          wallet.exists ? (currentBalance as num).toDouble() : 0.0;
+      final credit = balance.toDouble();
+      walletBalanceAfter = walletBalanceBefore + credit;
+      final now = FieldValue.serverTimestamp();
       transaction.update(cardRef, {
         'balance': 0,
         'status': 'redeemed',
         'redeemedBy': customerUid,
-        'redeemedAt': FieldValue.serverTimestamp(),
+        'redeemedAt': now,
+        'lastRedemptionId': walletTransactionRef.id,
+      });
+      transaction.set(walletRef, {
+        'ownerUid': customerUid,
+        'balance': walletBalanceAfter,
+        'updatedAt': now,
+        'lastTransactionId': walletTransactionRef.id,
+      });
+      transaction.set(walletTransactionRef, {
+        'ownerUid': customerUid,
+        'type': 'giftCardRedemption',
+        'direction': 'credit',
+        'amount': credit,
+        'balanceBefore': walletBalanceBefore,
+        'balanceAfter': walletBalanceAfter,
+        'giftCardCode': code,
+        'createdAt': now,
       });
     });
-    return redeemedBalance;
+    return walletBalanceAfter;
+  }
+
+  Future<double> getWalletBalance(String customerUid) async {
+    if (customerUid.isEmpty || customerUid.contains('/')) {
+      throw ArgumentError.value(
+        customerUid,
+        'customerUid',
+        'Debe ser un UID válido.',
+      );
+    }
+    final wallet =
+        await _firestore.collection('wallets').doc(customerUid).get();
+    if (!wallet.exists) return 0;
+    final data = wallet.data();
+    final balance = data?['balance'];
+    if (data?['ownerUid'] != customerUid || balance is! num || balance < 0) {
+      throw StateError('La billetera guardada no es válida.');
+    }
+    return balance.toDouble();
   }
 
   Map<String, dynamic> _auditData({

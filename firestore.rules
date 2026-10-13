@@ -68,6 +68,88 @@ service cloud.firestore {
         );
     }
 
+    function walletPath(userId) {
+      return /databases/$(database)/documents/wallets/$(userId);
+    }
+
+    function walletTransactionPath(transactionId) {
+      return /databases/$(database)/documents/walletTransactions/$(transactionId);
+    }
+
+    function walletBalanceBefore(userId) {
+      return exists(walletPath(userId))
+        ? get(walletPath(userId)).data.balance
+        : 0;
+    }
+
+    function validGiftCardWalletCredit(userId, transactionId, giftCardCode) {
+      let transactionPath = walletTransactionPath(transactionId);
+      let giftCardPath =
+        /databases/$(database)/documents/giftCards/$(giftCardCode);
+      let walletAfterPath = walletPath(userId);
+      let entry = getAfter(transactionPath).data;
+      let card = getAfter(giftCardPath).data;
+      let wallet = getAfter(walletAfterPath).data;
+      return existsAfter(transactionPath)
+        && existsAfter(giftCardPath)
+        && existsAfter(walletAfterPath)
+        && get(giftCardPath).data.status == 'active'
+        && entry.ownerUid == userId
+        && entry.type == 'giftCardRedemption'
+        && entry.direction == 'credit'
+        && entry.giftCardCode == giftCardCode
+        && entry.amount == get(giftCardPath).data.balance
+        && entry.amount == get(giftCardPath).data.initialBalance
+        && entry.amount > 0
+        && entry.balanceBefore == walletBalanceBefore(userId)
+        && entry.balanceAfter == entry.balanceBefore + entry.amount
+        && entry.createdAt == request.time
+        && card.status == 'redeemed'
+        && card.balance == 0
+        && card.redeemedBy == userId
+        && card.redeemedAt == request.time
+        && card.lastRedemptionId == transactionId
+        && wallet.ownerUid == userId
+        && wallet.balance == entry.balanceAfter
+        && wallet.lastTransactionId == transactionId
+        && wallet.updatedAt == request.time;
+    }
+
+    function validPosWalletDebit(userId, transactionId, saleId) {
+      let transactionPath = walletTransactionPath(transactionId);
+      let salePath = /databases/$(database)/documents/cafeSales/$(saleId);
+      let walletAfterPath = walletPath(userId);
+      let entry = getAfter(transactionPath).data;
+      let sale = getAfter(salePath).data;
+      let wallet = getAfter(walletAfterPath).data;
+      let walletBefore = get(walletPath(userId)).data;
+      return existsAfter(transactionPath)
+        && existsAfter(salePath)
+        && existsAfter(walletAfterPath)
+        && exists(walletPath(userId))
+        && walletBefore.ownerUid == userId
+        && walletBefore.balance is number
+        && walletBefore.balance >= entry.amount
+        && entry.ownerUid == userId
+        && entry.type == 'posDebit'
+        && entry.direction == 'debit'
+        && entry.saleId == saleId
+        && entry.employeeUid == request.auth.uid
+        && entry.amount is number
+        && entry.amount > 0
+        && entry.createdAt == request.time
+        && sale.paymentMethod == 'wallet'
+        && sale.walletTransactionId == transactionId
+        && sale.customerUid == userId
+        && sale.total == entry.amount
+        && sale.employeeUid == request.auth.uid
+        && wallet.ownerUid == userId
+        && wallet.balance == walletBefore.balance - entry.amount
+        && wallet.balance >= 0
+        && wallet.lastTransactionId == transactionId
+        && wallet.updatedAt == request.time;
+    }
+
     function validShopSizeStock(data) {
       return !('stockBySize' in data)
         || data.stockBySize is map
@@ -1211,7 +1293,7 @@ service cloud.firestore {
     match /customers/{customerId} {
       allow get, list: if isAdmin();
 
-      allow create: if isVerifiedStaff()
+      allow create: if isAdmin()
         && request.resource.data.keys().hasOnly([
           'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
           'sequence', 'createdBy', 'createdAt'
@@ -1466,7 +1548,7 @@ service cloud.firestore {
     match /managementMessages/{messageId} {
       allow get, list: if isAdmin();
 
-      allow create: if isAdmin()
+      allow create: if isVerifiedStaff()
         && request.resource.data.keys().hasOnly([
           'senderUid', 'senderEmail', 'senderName', 'category', 'priority',
           'title', 'body', 'createdAt'
@@ -1516,7 +1598,7 @@ service cloud.firestore {
           'cashSessionId', 'paymentMethod', 'total', 'cashReceived',
           'changeDue', 'items', 'cafeItems', 'productQuantities',
           'shopProductQuantities', 'shopVariantQuantities', 'customerUid',
-          'paidAt'
+          'walletTransactionId', 'paidAt'
         ])
         && request.resource.data.keys().hasAll([
           'employeeUid', 'employeeEmail', 'date', 'shift', 'attendanceId',
@@ -1553,7 +1635,9 @@ service cloud.firestore {
         && get(
           /databases/$(database)/documents/cashSessions/$(request.resource.data.cashSessionId)
         ).data.employeeUid == request.auth.uid
-        && request.resource.data.paymentMethod in ['cash', 'qr', 'card']
+        && request.resource.data.paymentMethod in [
+          'cash', 'qr', 'card', 'wallet'
+        ]
         && request.resource.data.total is number
         && request.resource.data.total > 0
         && request.resource.data.cashReceived is number
@@ -1566,6 +1650,25 @@ service cloud.firestore {
           || request.resource.data.paymentMethod in ['qr', 'card']
             && request.resource.data.cashReceived == 0
             && request.resource.data.changeDue == 0
+          || request.resource.data.paymentMethod == 'wallet'
+            && request.resource.data.cashReceived == 0
+            && request.resource.data.changeDue == 0
+            && request.resource.data.customerUid is string
+            && request.resource.data.walletTransactionId == saleId
+            && existsAfter(walletTransactionPath(saleId))
+            && getAfter(walletTransactionPath(saleId)).data.type == 'posDebit'
+            && getAfter(walletTransactionPath(saleId)).data.ownerUid
+              == request.resource.data.customerUid
+            && getAfter(walletTransactionPath(saleId)).data.amount
+              == request.resource.data.total
+            && getAfter(walletPath(request.resource.data.customerUid)).data.lastTransactionId
+              == saleId
+        )
+        && (
+          request.resource.data.paymentMethod == 'wallet'
+            && 'walletTransactionId' in request.resource.data
+          || request.resource.data.paymentMethod != 'wallet'
+            && !('walletTransactionId' in request.resource.data)
         )
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
@@ -1613,7 +1716,9 @@ service cloud.firestore {
         && request.resource.data.employeeEmail == request.auth.token.email
         && request.resource.data.shift in ['morning', 'afternoon', 'night']
         && request.resource.data.cashSessionId is string
-        && request.resource.data.paymentMethod in ['cash', 'qr', 'card']
+        && request.resource.data.paymentMethod in [
+          'cash', 'qr', 'card', 'wallet'
+        ]
         && request.resource.data.total is number
         && request.resource.data.total > 0
         && request.resource.data.saleItems is list
@@ -3062,6 +3167,118 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
+    match /wallets/{userId} {
+      allow get: if request.auth != null
+        && (
+          request.auth.uid == userId
+          || isAdmin()
+        );
+      allow list: if false;
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'ownerUid', 'balance', 'updatedAt', 'lastTransactionId'
+        ])
+        && request.resource.data.ownerUid == userId
+        && request.resource.data.balance is number
+        && request.resource.data.balance >= 0
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastTransactionId is string
+        && validGiftCardWalletCredit(
+          userId,
+          request.resource.data.lastTransactionId,
+          getAfter(
+            walletTransactionPath(request.resource.data.lastTransactionId)
+          ).data.giftCardCode
+        );
+
+      allow update: if request.auth != null
+        && resource.data.ownerUid == userId
+        && request.resource.data.ownerUid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'balance', 'updatedAt', 'lastTransactionId'
+        ])
+        && request.resource.data.balance is number
+        && request.resource.data.balance >= 0
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.lastTransactionId is string
+        && (
+          validGiftCardWalletCredit(
+            userId,
+            request.resource.data.lastTransactionId,
+            getAfter(
+              walletTransactionPath(request.resource.data.lastTransactionId)
+            ).data.giftCardCode
+          )
+          || isVerifiedStaff()
+            && validPosWalletDebit(
+              userId,
+              request.resource.data.lastTransactionId,
+              request.resource.data.lastTransactionId
+            )
+        );
+
+      allow delete: if false;
+    }
+
+    match /walletTransactions/{transactionId} {
+      allow get: if request.auth != null
+        && (
+          isAdmin()
+          || resource.data.ownerUid == request.auth.uid
+        );
+      allow list: if isAdmin()
+        || (
+          request.auth != null
+          && resource.data.ownerUid == request.auth.uid
+        );
+
+      allow create: if request.resource.data.keys().hasOnly([
+          'ownerUid', 'type', 'direction', 'amount', 'balanceBefore',
+          'balanceAfter', 'giftCardCode', 'saleId', 'employeeUid', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'ownerUid', 'type', 'direction', 'amount', 'createdAt'
+        ])
+        && request.resource.data.ownerUid is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.createdAt == request.time
+        && (
+          request.resource.data.type == 'giftCardRedemption'
+            && request.auth != null
+            && request.auth.uid == request.resource.data.ownerUid
+            && request.resource.data.direction == 'credit'
+            && request.resource.data.giftCardCode is string
+            && request.resource.data.balanceBefore is number
+            && request.resource.data.balanceBefore >= 0
+            && request.resource.data.balanceAfter is number
+            && !('saleId' in request.resource.data)
+            && !('employeeUid' in request.resource.data)
+            && validGiftCardWalletCredit(
+              request.resource.data.ownerUid,
+              transactionId,
+              request.resource.data.giftCardCode
+            )
+          || request.resource.data.type == 'posDebit'
+            && isVerifiedStaff()
+            && request.resource.data.direction == 'debit'
+            && request.resource.data.saleId == transactionId
+            && request.resource.data.employeeUid == request.auth.uid
+            && !('balanceBefore' in request.resource.data)
+            && !('balanceAfter' in request.resource.data)
+            && !('giftCardCode' in request.resource.data)
+            && validPosWalletDebit(
+              request.resource.data.ownerUid,
+              transactionId,
+              request.resource.data.saleId
+            )
+        );
+
+      allow update, delete: if false;
+    }
+
     match /diamondLedger/{entryId} {
       allow read, write: if false;
     }
@@ -3099,7 +3316,7 @@ service cloud.firestore {
         || (request.auth != null && resource.data.status == 'active');
       allow list: if isVerifiedStaff() || isAdmin();
 
-      allow create: if isVerifiedStaff()
+      allow create: if isAdmin()
         && request.resource.data.keys().hasOnly([
           'code', 'initialBalance', 'balance', 'status', 'createdBy',
           'createdByEmail', 'createdAt', 'redeemedBy', 'redeemedAt',
@@ -3123,9 +3340,16 @@ service cloud.firestore {
         && request.resource.data.balance == 0
         && request.resource.data.redeemedBy == request.auth.uid
         && request.resource.data.redeemedAt == request.time
+        && request.resource.data.lastRedemptionId is string
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'balance', 'status', 'redeemedBy', 'redeemedAt'
-        ]);
+          'balance', 'status', 'redeemedBy', 'redeemedAt',
+          'lastRedemptionId'
+        ])
+        && validGiftCardWalletCredit(
+          request.auth.uid,
+          request.resource.data.lastRedemptionId,
+          code
+        );
 
       allow delete: if false;
     }
