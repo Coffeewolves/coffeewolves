@@ -4589,6 +4589,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   String page = 'splash';
   String previousPage = 'home';
+  String _menuReturnPage = 'home';
+  String _menuReturnPreviousPage = 'home';
   bool _musicEnabled = true;
   bool _musicPlaying = false;
   bool _musicStarting = false;
@@ -5132,6 +5134,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         _paymentStatus == 'pending') {
       _paymentGeneration++;
     }
+    if (destination == 'menu' && page != 'menu') {
+      _menuReturnPage = page;
+      _menuReturnPreviousPage = previousPage;
+    }
     setState(() {
       previousPage = page;
       page = destination;
@@ -5147,6 +5153,16 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     }
     setState(() {
       page = previousPage;
+    });
+  }
+
+  void _closeSideMenu() {
+    final destination = _menuReturnPage == 'menu' ? 'home' : _menuReturnPage;
+    if (destination == page) return;
+    setState(() {
+      page = destination;
+      previousPage =
+          _menuReturnPreviousPage == 'menu' ? 'home' : _menuReturnPreviousPage;
     });
   }
 
@@ -29295,7 +29311,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _topBar(title: 'WOLVES CLUB', backButton: true, menuButton: false),
+          _topBar(
+            title: 'WOLVES CLUB',
+            backButton: true,
+            menuButton: false,
+            onBack: _closeSideMenu,
+          ),
           const SizedBox(height: 18),
           Center(child: _avatar(size: 82)),
           const SizedBox(height: 10),
