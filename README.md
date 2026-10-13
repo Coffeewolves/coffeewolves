@@ -20,9 +20,44 @@ esté habilitado el proveedor **Correo electrónico/contraseña** en
 Authentication > Proveedores de acceso y que el dominio publicado figure en
 Authentication > Configuración > Dominios autorizados.
 
-El plan Spark permite Firebase Authentication y Firestore. La carga de fotos
-que depende de Firebase Storage requiere que Storage esté disponible en el
-proyecto; esta app no crea un bucket ni activa Blaze automáticamente.
+El plan Spark permite Firebase Authentication y Firestore. Las fotos del Muro
+de las Travesuras se guardan como JPEG optimizados en Firestore, con un máximo
+de 200 KB por foto; no requieren Storage ni crean un bucket. Las galerías de
+mascotas y otras funciones que sí usan Firebase Storage seguirán necesitando
+que ese servicio esté disponible en el proyecto. La app no activa Blaze.
+
+#### Retención de fotos del Muro
+
+Las publicaciones nuevas vencen inicialmente a los 7 días. El contador se
+actualiza con cada publicación y registro: al llegar a 5.000 documentos de
+usuarios, las publicaciones nuevas vencen a los 3 días; al llegar a 1.000
+publicaciones durante el día UTC, vence en 24 horas (este límite tiene
+prioridad). La pantalla deja de mostrar publicaciones vencidas y actualiza el
+listado cada minuto.
+
+Para inicializar los contadores, migrar las publicaciones antiguas y limpiar
+las vencidas, instala las dependencias de Functions y autentica Google Cloud
+Application Default Credentials como una persona con acceso al proyecto:
+
+```bash
+cd functions
+npm install
+gcloud auth application-default login
+node cleanup_mischief_posts.js --watch
+```
+
+Mantén ese proceso local ejecutándose: revisa el Muro cada 6 horas. El primer
+inicio calcula el total de usuarios y publicaciones del día y crea el contador
+que necesita la app antes de publicar. Para aplicar las reglas e índice nuevos
+de Firestore:
+
+```bash
+firebase deploy --only firestore:rules,firestore:indexes --project wolves-club-fb24a
+```
+
+Esta estrategia consume cuota de Firestore Spark; cada imagen se convierte a
+Base64 dentro del documento y ocupa más espacio que el JPEG original. El
+proceso local no activa Blaze ni crea un bucket.
 
 ## Menú
 

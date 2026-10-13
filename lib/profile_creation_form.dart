@@ -690,9 +690,13 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
         final fullName = '$firstName $lastName';
         final firestore = FirebaseFirestore.instance;
         final userReference = firestore.collection('users').doc(user.uid);
+        final communityStatsReference =
+            firestore.collection('communityStats').doc('mischiefWall');
         try {
           await firestore.runTransaction<void>((transaction) async {
             final existingProfile = await transaction.get(userReference);
+            final communityStats =
+                await transaction.get(communityStatsReference);
             final profileData = {
               'email': user.email,
               'displayName': fullName,
@@ -722,6 +726,21 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
               previousUsername: existingProfile.data()?['username'] as String?,
             );
             transaction.set(userReference, profileData);
+            final communityStatsData = communityStats.data();
+            final memberCount = communityStatsData?['memberCount'];
+            if (communityStats.exists && memberCount is! int) {
+              throw StateError(
+                'El contador de miembros no es válido. '
+                'Gerencia debe ejecutar el script local de mantenimiento.',
+              );
+            }
+            if (communityStats.exists) {
+              transaction.update(communityStatsReference, {
+                'memberCount': (memberCount as int) + 1,
+                'lastMemberUid': user.uid,
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+            }
           });
         } on UsernameAlreadyTakenException {
           await user.delete();
@@ -1143,9 +1162,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
                   'por correo. Puedo retirar mi consentimiento.',
                   style: TextStyle(color: _muted, fontSize: 11),
                 ),
-                onChanged: _isLoading
-                    ? null
-                    : _saveBirthdayConsent,
+                onChanged: _isLoading ? null : _saveBirthdayConsent,
               ),
             if (_dateFromStoredValue(birthDate) == null)
               const Padding(

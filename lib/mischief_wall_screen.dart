@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -32,8 +33,9 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
   final _service = MischiefWallService();
   final _picker = ImagePicker();
   late Stream<QuerySnapshot<Map<String, dynamic>>> _postsStream;
+  Timer? _expiryRefreshTimer;
   bool _publishing = false;
-  String _publishingStage = 'SUBIENDO FOTO…';
+  String _publishingStage = 'GUARDANDO FOTO…';
   bool _voting = false;
   bool _leaving = false;
   String _feedSort = 'recent';
@@ -44,6 +46,16 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
   void initState() {
     super.initState();
     _postsStream = _service.watchPosts();
+    _expiryRefreshTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _refreshPosts(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _expiryRefreshTimer?.cancel();
+    super.dispose();
   }
 
   void _refreshPosts() {
@@ -81,8 +93,9 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
         imageQuality: 100,
       );
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = 'No se pudo abrir la galería: $error');
+      }
       return;
     }
     if (image == null || !mounted) return;
@@ -180,6 +193,9 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
             : 'La carga tardó demasiado. Revisa tu conexión e inténtalo '
                 'de nuevo.';
       });
+    } on StateError catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.message);
     } on FirebaseException catch (error, stackTrace) {
       debugPrint('Firebase rechazó la publicación: ${error.code}');
       debugPrintStack(stackTrace: stackTrace);
@@ -198,7 +214,7 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
       if (mounted) {
         setState(() {
           _publishing = false;
-          _publishingStage = 'SUBIENDO FOTO…';
+          _publishingStage = 'GUARDANDO FOTO…';
         });
       }
     }
@@ -306,6 +322,15 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
   Widget _postCard(QueryDocumentSnapshot<Map<String, dynamic>> document) {
     final post = document.data();
     final vote = _myVotes[document.id];
+    final photoBase64 = post['photoBase64'] as String?;
+    Uint8List? photoBytes;
+    if (photoBase64 != null) {
+      try {
+        photoBytes = base64Decode(photoBase64);
+      } on FormatException {
+        photoBytes = null;
+      }
+    }
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
@@ -359,16 +384,19 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
           ),
           AspectRatio(
             aspectRatio: 4 / 3,
-            child: Image.network(
-              post['photoUrl'] as String? ?? '',
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const ColoredBox(
-                color: Color(0xFF302820),
-                child: Center(
-                  child: Icon(Icons.broken_image_outlined, color: _muted),
-                ),
-              ),
-            ),
+            child: photoBytes != null
+                ? Image.memory(
+                    photoBytes,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        _brokenPhotoPlaceholder(),
+                  )
+                : Image.network(
+                    post['photoUrl'] as String? ?? '',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        _brokenPhotoPlaceholder(),
+                  ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(15, 13, 15, 8),
@@ -410,11 +438,11 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
                     onPressed:
                         _voting ? null : () => _vote(document.id, 'guilty'),
                     icon: Icon(
-                      vote == 'guilty' ? Icons.gavel : Icons.balance_outlined,
+                      vote == 'guilty' ? Icons.gavel : Icons.gavel_outlined,
                       size: 18,
                     ),
                     label: Text(
-                      'Culpable ⚖️ · ${post['guiltyVotes'] ?? 0}',
+                      'Culpable 😈 · ${post['guiltyVotes'] ?? 0}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -433,6 +461,13 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
       ),
     );
   }
+
+  Widget _brokenPhotoPlaceholder() => const ColoredBox(
+        color: Color(0xFF302820),
+        child: Center(
+          child: Icon(Icons.broken_image_outlined, color: _muted),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -598,7 +633,16 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
                           );
                         }
                         final posts = [...snapshot.data!.docs];
-                        if (_feedSort == 'innocent') {
+                        if (_feedSort == 'recent') {
+                          posts.sort(
+                            (a, b) => (b.data()['createdAt'] as Timestamp?)
+                                ?.compareTo(
+                                  a.data()['createdAt'] as Timestamp? ??
+                                      Timestamp(0, 0),
+                                ) ??
+                                -1,
+                          );
+                        } else if (_feedSort == 'innocent') {
                           posts.sort(
                             (a, b) => (b.data()['innocentVotes'] as num? ?? 0)
                                 .compareTo(

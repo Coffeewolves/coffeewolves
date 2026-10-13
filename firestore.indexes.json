@@ -1,0 +1,19 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "mischiefPosts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fecha_Expiracion",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

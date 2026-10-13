@@ -811,21 +811,80 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /communityStats/{statsId} {
+      allow get: if statsId == 'mischiefWall'
+        && request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      allow list: if false;
+      allow update: if statsId == 'mischiefWall'
+        && request.auth != null
+        && request.resource.data.updatedAt == request.time
+        && (
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['memberCount', 'lastMemberUid', 'updatedAt'])
+            && request.resource.data.memberCount == resource.data.memberCount + 1
+            && request.resource.data.lastMemberUid == request.auth.uid
+            && request.resource.data.dailyPostCount
+              == resource.data.dailyPostCount
+            && request.resource.data.dailyPostDate == resource.data.dailyPostDate
+            && request.resource.data.lastPostId == resource.data.lastPostId
+            && getAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.createdAt == request.time
+            && getAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.email == request.auth.token.email
+          )
+          || (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'dailyPostCount', 'dailyPostDate', 'lastPostId', 'updatedAt'
+              ])
+            && request.resource.data.memberCount == resource.data.memberCount
+            && request.resource.data.lastMemberUid == resource.data.lastMemberUid
+            && request.resource.data.lastPostId is string
+            && request.resource.data.dailyPostCount is int
+            && request.resource.data.dailyPostCount >= 1
+            && (
+              request.resource.data.dailyPostDate == resource.data.dailyPostDate
+              && request.resource.data.dailyPostCount
+                == resource.data.dailyPostCount + 1
+              || request.resource.data.dailyPostDate
+                != resource.data.dailyPostDate
+              && request.resource.data.dailyPostCount == 1
+            )
+            && existsAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            )
+            && getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            ).data.ownerUid == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            ).data.createdAt == request.time
+            && request.auth.token.email_verified == true
+          )
+        );
+      allow create, delete: if false;
+    }
+
     match /mischiefPosts/{postId} {
       allow get, list: if request.auth != null
         && request.auth.token.firebase.sign_in_provider != 'anonymous';
 
       allow create: if request.auth != null
         && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.auth.token.email_verified == true
         && request.resource.data.keys().hasOnly([
           'ownerUid', 'ownerName', 'dogName', 'description',
-          'photoPath', 'photoUrl', 'innocentVotes', 'guiltyVotes',
-          'createdAt'
+          'photoBase64', 'fecha_Expiracion', 'innocentVotes',
+          'guiltyVotes', 'createdAt'
         ])
         && request.resource.data.keys().hasAll([
           'ownerUid', 'ownerName', 'dogName', 'description',
-          'photoPath', 'photoUrl', 'innocentVotes', 'guiltyVotes',
-          'createdAt'
+          'photoBase64', 'fecha_Expiracion', 'innocentVotes',
+          'guiltyVotes', 'createdAt'
         ])
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerName is string
@@ -837,9 +896,43 @@ service cloud.firestore {
         && request.resource.data.description is string
         && request.resource.data.description.size() >= 1
         && request.resource.data.description.size() <= 300
-        && request.resource.data.photoPath
-          == 'mischief-posts/' + request.auth.uid + '/' + postId + '.jpg'
-        && request.resource.data.photoUrl is string
+        && request.resource.data.photoBase64 is string
+        && request.resource.data.photoBase64.size() >= 4
+        && request.resource.data.photoBase64.size() <= 273100
+        && request.resource.data.fecha_Expiracion is timestamp
+        && request.resource.data.fecha_Expiracion > request.time
+        && getAfter(
+          /databases/$(database)/documents/communityStats/mischiefWall
+        ).data.lastPostId == postId
+        && getAfter(
+          /databases/$(database)/documents/communityStats/mischiefWall
+        ).data.dailyPostCount is int
+        && getAfter(
+          /databases/$(database)/documents/communityStats/mischiefWall
+        ).data.memberCount is int
+        && (
+          getAfter(
+            /databases/$(database)/documents/communityStats/mischiefWall
+          ).data.dailyPostCount >= 1000
+          && request.resource.data.fecha_Expiracion
+            <= request.time + duration.value(1, 'd')
+          || getAfter(
+            /databases/$(database)/documents/communityStats/mischiefWall
+          ).data.dailyPostCount < 1000
+          && getAfter(
+            /databases/$(database)/documents/communityStats/mischiefWall
+          ).data.memberCount >= 5000
+          && request.resource.data.fecha_Expiracion
+            <= request.time + duration.value(3, 'd')
+          || getAfter(
+            /databases/$(database)/documents/communityStats/mischiefWall
+          ).data.dailyPostCount < 1000
+          && getAfter(
+            /databases/$(database)/documents/communityStats/mischiefWall
+          ).data.memberCount < 5000
+          && request.resource.data.fecha_Expiracion
+            <= request.time + duration.value(7, 'd')
+        )
         && request.resource.data.innocentVotes == 0
         && request.resource.data.guiltyVotes == 0
         && request.resource.data.createdAt == request.time;
