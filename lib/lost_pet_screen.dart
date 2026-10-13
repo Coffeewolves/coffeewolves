@@ -461,9 +461,12 @@ class _LostPetScreenState extends State<LostPetScreen> {
       );
 
   Widget _loadError(Object error) {
-    final text = error is FirebaseException
-        ? 'No se pudo consultar el servicio (${error.code}).'
-        : 'No se pudo cargar el contenido.';
+    final text = error is FirebaseException && error.code == 'permission-denied'
+        ? 'Tu sesión no tiene permiso para consultar estas misiones. Inicia '
+            'sesión con una cuenta de correo y vuelve a intentarlo.'
+        : error is FirebaseException
+            ? 'No se pudo consultar el servicio (${error.code}).'
+            : 'No se pudo cargar el contenido.';
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(28),

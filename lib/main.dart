@@ -28576,7 +28576,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                           setDialogState(() {
                             isSubmitting = false;
                             errorMessage =
-                                'No se pudo enviar el caso (${error.code}).';
+                                error.code == 'permission-denied'
+                                    ? 'Firestore rechazó el envío. Verifica tu '
+                                        'correo e inténtalo de nuevo; si persiste, '
+                                        'contacta a soporte.'
+                                    : 'No se pudo enviar el caso '
+                                        '(${error.code}).';
                           });
                         } catch (error, stackTrace) {
                           debugPrint('No se pudo enviar el mensaje: $error');

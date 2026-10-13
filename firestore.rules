@@ -114,6 +114,11 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
     }
 
+    function isAuthenticatedLostPetMember() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
     function hasNoPublicContactInfo(value) {
       return value is string
         && !value.matches('.*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}.*')
@@ -1233,7 +1238,7 @@ service cloud.firestore {
     }
 
     match /lostPetMissions/{missionId} {
-      allow get, list: if isVerifiedLostPetMember();
+      allow get, list: if isAuthenticatedLostPetMember();
       allow create: if isVerifiedLostPetMember()
         && validLostPetMission(request.resource.data)
         && request.resource.data.status == 'active'
@@ -1301,7 +1306,7 @@ service cloud.firestore {
       }
 
       match /photos/{photoId} {
-        allow get, list: if isVerifiedLostPetMember();
+        allow get, list: if isAuthenticatedLostPetMember();
         allow create, update: if isVerifiedLostPetMember()
           && photoId in ['0', '1', '2']
           && request.resource.data.keys().hasOnly(['index', 'dataBase64'])
@@ -1334,7 +1339,7 @@ service cloud.firestore {
     }
 
     match /lostPetSightings/{sightingId} {
-      allow get, list: if isVerifiedLostPetMember();
+      allow get, list: if isAuthenticatedLostPetMember();
       allow create: if isVerifiedLostPetMember()
         && validLostPetSighting(request.resource.data)
         && request.resource.data.createdAt == request.time;
@@ -2642,7 +2647,8 @@ service cloud.firestore {
           !('supportCategory' in request.resource.data)
           || request.resource.data.supportCategory in [
             'Mi Bitácora', 'Wolves Member Card', 'Billetera',
-            'Mis Coleccionables', 'Álbum Cold Brew', 'Mis Mascotas',
+            'Mis Colecciones', 'Mis Coleccionables', 'Álbum Cold Brew',
+            'Wolves Match', 'Hoy nos falta uno', 'Mis Mascotas',
             'Mis Pedidos', 'Otro'
           ]
         )

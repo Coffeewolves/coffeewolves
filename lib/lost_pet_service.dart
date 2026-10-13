@@ -115,11 +115,17 @@ class LostPetService {
   CollectionReference<Map<String, dynamic>> get _reports =>
       _firestore.collection('lostPetReports');
 
-  User _verifiedUser() {
-    final user = _auth.currentUser;
+  Future<User> _verifiedUser() async {
+    var user = _auth.currentUser;
+    if (user == null || user.isAnonymous) {
+      throw StateError('Inicia sesión y verifica tu correo para continuar.');
+    }
+    await user.reload();
+    user = _auth.currentUser;
     if (user == null || user.isAnonymous || !user.emailVerified) {
       throw StateError('Inicia sesión y verifica tu correo para continuar.');
     }
+    await user.getIdToken(true);
     return user;
   }
 
@@ -139,7 +145,7 @@ class LostPetService {
   }
 
   Future<String> getPrivateIdentification(String missionId) async {
-    final user = _verifiedUser();
+    final user = await _verifiedUser();
     final mission = await _missions.doc(missionId).get();
     if (!mission.exists || mission.data()?['ownerUid'] != user.uid) {
       throw StateError('Solo quien publicó la misión puede ver esos detalles.');
@@ -177,7 +183,7 @@ class LostPetService {
     required Map<String, dynamic> fields,
     required List<Uint8List> photos,
   }) async {
-    final user = _verifiedUser();
+    final user = await _verifiedUser();
     _validatePhotos(photos, mustHave: true);
     final reference = _missions.doc();
     final batch = _firestore.batch();
@@ -216,7 +222,7 @@ class LostPetService {
     required Map<String, dynamic> fields,
     required List<Uint8List> photos,
   }) async {
-    final user = _verifiedUser();
+    final user = await _verifiedUser();
     _validatePhotos(photos, mustHave: true);
     final reference = _missions.doc(missionId);
     final mission = await reference.get();
@@ -353,7 +359,7 @@ class LostPetService {
     String reunionStory = '',
     bool shareReunion = false,
   }) async {
-    _verifiedUser();
+    await _verifiedUser();
     if (!lostPetStatuses.contains(status)) {
       throw ArgumentError.value(status, 'status', 'Estado no válido.');
     }
@@ -384,7 +390,7 @@ class LostPetService {
     required Map<String, dynamic> fields,
     Uint8List? photo,
   }) async {
-    _verifiedUser();
+    await _verifiedUser();
     _validatePublicText(fields, const [
       'description',
       'color',
@@ -421,7 +427,7 @@ class LostPetService {
     required String missionId,
     required String message,
   }) async {
-    final user = _verifiedUser();
+    final user = await _verifiedUser();
     final mission = await _missions.doc(missionId).get();
     if (!mission.exists || mission.data()?['ownerUid'] == user.uid) {
       throw StateError('No se puede enviar esta solicitud de contacto.');
@@ -443,7 +449,7 @@ class LostPetService {
     required String requestId,
     required String reply,
   }) async {
-    _verifiedUser();
+    await _verifiedUser();
     await _contactRequests.doc(requestId).update({
       'ownerReply': reply.trim(),
       'status': 'replied',
@@ -455,7 +461,7 @@ class LostPetService {
     required String missionId,
     required bool isFavorite,
   }) async {
-    final user = _verifiedUser();
+    final user = await _verifiedUser();
     final reference = _favorites.doc('${user.uid}_$missionId');
     if (isFavorite) {
       await reference.delete();
@@ -473,7 +479,7 @@ class LostPetService {
     required String reason,
     String details = '',
   }) async {
-    final user = _verifiedUser();
+    final user = await _verifiedUser();
     await _reports.doc('${missionId}_${user.uid}').set({
       'missionId': missionId,
       'reporterUid': user.uid,

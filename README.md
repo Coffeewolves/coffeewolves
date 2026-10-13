@@ -42,7 +42,9 @@ Para habilitar las tareas automáticas, configura el secreto de repositorio
 `FIREBASE_SERVICE_ACCOUNT_WOLVES_CLUB_FB24A` con una clave JSON de una cuenta de
 servicio del proyecto `wolves-club-fb24a`. La cuenta debe poder leer/escribir
 Firestore; para el despliegue de reglas e índices también necesita permisos de
-administración de Firebase Rules e índices de Firestore. Los workflows
+administración de Firebase Rules e índices de Firestore. El secreto debe
+contener el JSON completo de la clave, no una ruta de archivo, un PEM ni texto
+codificado en Base64. Los workflows
 `cleanup-mischief-posts.yml` y `deploy-firestore.yml` se ejecutan en GitHub
 Actions tras el push; el primero migra las publicaciones existentes y luego
 se repite cada hora. La aplicación web se publica por separado mediante
