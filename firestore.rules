@@ -891,6 +891,54 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
+    match /userPets/{userId}/pets/{petId} {
+      function validPetProfile(data) {
+        return data.keys().hasOnly([
+            'name', 'breed', 'birthDate', 'description',
+            'photoPaths', 'photoUrls', 'createdAt', 'updatedAt'
+          ])
+          && data.keys().hasAll([
+            'name', 'breed', 'birthDate', 'description',
+            'photoPaths', 'photoUrls', 'createdAt', 'updatedAt'
+          ])
+          && data.name is string
+          && data.name.size() > 0
+          && data.name.size() <= 60
+          && data.breed is string
+          && data.breed.size() > 0
+          && data.breed.size() <= 80
+          && data.birthDate is timestamp
+          && data.birthDate <= request.time
+          && data.description is string
+          && data.description.size() > 0
+          && data.description.size() <= 500
+          && data.photoPaths is list
+          && data.photoPaths.size() <= 6
+          && data.photoUrls is list
+          && data.photoUrls.size() == data.photoPaths.size()
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp;
+      }
+
+      allow get, list: if request.auth != null
+        && request.auth.uid == userId;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && validPetProfile(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && validPetProfile(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true;
+    }
+
     match /users/{userId} {
       allow get: if request.auth != null
         && (request.auth.uid == userId || isAdmin());

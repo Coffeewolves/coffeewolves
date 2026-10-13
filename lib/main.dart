@@ -23,6 +23,7 @@ import 'business_operations_service.dart';
 import 'chat_credit_service.dart';
 import 'mischief_wall_screen.dart';
 import 'pack_legacy_screen.dart';
+import 'pet_profiles_screen.dart';
 import 'profile_creation_form.dart';
 import 'member_card_service.dart';
 import 'product_catalog_service.dart';
@@ -4631,24 +4632,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   bool _chatQuotaBlocked = false;
   String? _chatCreditStatus;
   final List<String> sentIcebreakers = [];
-  final List<PetProfile> petProfiles = [
-    const PetProfile(
-      name: 'Kiara',
-      breed: 'Pomeranian',
-      age: '8 meses',
-      size: 'Mini',
-      energyLevel: 'Alto',
-      interests: ['Fan de la pelota', 'Amante de helados pet'],
-    ),
-    const PetProfile(
-      name: 'Luna',
-      breed: 'Siberian Husky',
-      age: '3 años',
-      size: 'Grande',
-      energyLevel: 'Alto',
-      interests: ['Paseos', 'Juegos al aire libre'],
-    ),
-  ];
+  final List<PetProfile> petProfiles = [];
 
   static const List<String> _petSizes = ['Mini', 'Mediano', 'Grande'];
   static const List<String> _energyLevels = ['Bajo', 'Medio', 'Alto'];
@@ -23720,6 +23704,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }
 
   double _playCompatibility(Map<String, Object> profile) {
+    if (petProfiles.isEmpty) return 0.6;
     final kiara = petProfiles.firstWhere((pet) => pet.name == 'Kiara');
     final otherInterests = (profile['interests'] as List<String>).toSet();
     final kiaraInterests = kiara.interests.toSet();
@@ -26680,48 +26665,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   // ==========================================================
 
   Widget _pets() {
-    return Padding(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        children: [
-          _topBar(title: 'MIS MASCOTAS'),
-          const SizedBox(height: 10),
-          _outlineButton(
-            '+  AGREGAR MASCOTA',
-            _showAddPetDialog,
-          ),
-          const SizedBox(height: 20),
-          ...petProfiles.map(
-            (pet) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _petCard(pet),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Fotos de Kiara (12)',
-              style: TextStyle(
-                color: white,
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _petPhoto()),
-              const SizedBox(width: 8),
-              Expanded(child: _petPhoto()),
-              const SizedBox(width: 8),
-              Expanded(child: _petPhoto()),
-            ],
-          ),
-        ],
-      ),
-    );
+    return PetProfilesScreen(onBack: back);
   }
 
   Widget _wallet() {

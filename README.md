@@ -547,6 +547,13 @@ de coleccionables devuelve `permission-denied`, publica las reglas Firestore
 actualizadas con `firebase deploy --only firestore:rules`; la interfaz muestra
 el código real del error y ofrece reintentar sin ocultar los otros módulos.
 
+**Mis Mascotas** guarda perfiles privados en `userPets/{uid}/pets`. Cada perfil
+incluye nombre, raza, fecha de nacimiento, descripción y hasta seis fotos
+optimizadas en Firebase Storage bajo `pet-profiles/{uid}/...`. El miembro puede
+editar o eliminar sus perfiles; las reglas limitan lectura y cambios al dueño
+de la cuenta verificada. Despliega ambos grupos de reglas al publicar:
+`firebase deploy --only firestore:rules,storage`.
+
 **Legado de la Manada** es una vitrina pública curada por Gerencia, separada
 del Coffee Passport y del Muro de las Travesuras. Los perfiles se almacenan en
 `packLegacyProfiles`; solo los documentos con `published: true` se muestran a

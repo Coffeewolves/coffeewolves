@@ -20,5 +20,19 @@ service firebase.storage {
       allow delete: if request.auth != null
         && request.auth.uid == userId;
     }
+
+    match /pet-profiles/{userId}/{petId}/{fileName} {
+      allow read: if request.auth != null
+        && request.auth.uid == userId;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && fileName.matches('^[0-9]{15,20}_[0-9]{1,2}[.]jpg$')
+        && request.resource.size <= 204800
+        && request.resource.contentType == 'image/jpeg';
+      allow update: if false;
+      allow delete: if request.auth != null
+        && request.auth.uid == userId;
+    }
   }
 }
