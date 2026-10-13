@@ -26529,29 +26529,28 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 ],
               ),
             ),
-          _orderCard(
-            '#00251',
-            '16 Oct • 15:20',
-            'Latte + Cheesecake',
-            '\$8.00',
-            _featuredOrderReady ? 'Listo para recoger' : 'En preparación',
-            !_featuredOrderReady,
+          const SizedBox(height: 24),
+          const Icon(
+            Icons.receipt_long_outlined,
+            size: 42,
+            color: muted,
           ),
-          _orderCard(
-            '#00250',
-            '15 Oct • 12:30',
-            'V60 + Muffin',
-            '\$7.50',
-            'Entregado',
-            false,
+          const SizedBox(height: 10),
+          const Text(
+            'AÚN NO HAY PEDIDOS PARA MOSTRAR',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: cream,
+              fontSize: 13,
+              letterSpacing: 0.7,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          _orderCard(
-            '#00249',
-            '10 Oct • 16:45',
-            'Merch T-shirt',
-            '\$20.00',
-            'Entregado',
-            false,
+          const SizedBox(height: 6),
+          const Text(
+            'Cuando realices un pedido, aparecerá aquí.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: muted, fontSize: 12),
           ),
         ],
       ),
@@ -26825,6 +26824,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               ],
             ),
           ),
+          const SizedBox(height: 20),
+          _collectibleAlbumCatalog(
+            ownedModelCodes: owned.map((plush) => plush.modelCode).toSet(),
+          ),
           if (_plushCollectionOutOfStock) ...[
             const SizedBox(height: 12),
             _stockBadge(),
@@ -26973,9 +26976,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         final collectibles = snapshot.data!.coleccionables;
         final ownedModelCodes =
             collectibles.map((collectible) => collectible.modelCode).toSet();
-        final figureModels = collectibleModelNames.entries
-            .where((entry) => entry.key.startsWith('CW-PLUSH-'))
-            .toList(growable: false);
+        final ownedCupMethodIds = <String>{};
+        for (final collectible in collectibles) {
+          if (!collectible.modelCode.startsWith('CW-CUP-')) continue;
+          final details =
+              '${collectible.character} ${collectible.notes}'.toLowerCase();
+          for (final method in collectibleCupMethods) {
+            if (details.contains(method.id) ||
+                details.contains(method.name.toLowerCase())) {
+              ownedCupMethodIds.add(method.id);
+            }
+          }
+        }
         return Padding(
           padding: const EdgeInsets.all(18),
           child: Column(
@@ -26996,89 +27008,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 10),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'FIGURAS DE LA COLECCIÓN',
-                  style: TextStyle(
-                    color: cream,
-                    fontSize: 11,
-                    letterSpacing: 1.2,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final columns = constraints.maxWidth >= 560 ? 3 : 2;
-                  return GridView.builder(
-                    key: const ValueKey('collectible-figure-catalog'),
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: figureModels.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                      childAspectRatio: 1.45,
-                    ),
-                    itemBuilder: (context, index) {
-                      final entry = figureModels[index];
-                      final isOwned = ownedModelCodes.contains(entry.key);
-                      return Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: card,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isOwned
-                                ? gold.withValues(alpha: 0.7)
-                                : const Color(0xFF494139),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            _collectibleFigureImage(
-                              modelCode: entry.key,
-                              inColor: isOwned,
-                              size: 54,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    entry.value,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: cream,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    isOwned ? 'DESBLOQUEADA' : 'POR DESCUBRIR',
-                                    style: TextStyle(
-                                      color: isOwned ? gold : muted,
-                                      fontSize: 8,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
+              const SizedBox(height: 14),
+              _collectibleAlbumCatalog(
+                ownedModelCodes: ownedModelCodes,
+                ownedCupMethodIds: ownedCupMethodIds,
               ),
               const SizedBox(height: 14),
               if (collectibles.isEmpty)
@@ -27154,6 +27087,220 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           ),
         );
       },
+    );
+  }
+
+  Widget _collectibleAlbumCatalog({
+    required Set<String> ownedModelCodes,
+    Set<String> ownedCupMethodIds = const {},
+  }) {
+    final album = buildCollectibleAlbum(
+      ownedModelCodes: ownedModelCodes,
+      ownedCupMethodIds: ownedCupMethodIds,
+    );
+    final cups =
+        album.where((entry) => entry.type == CollectibleAlbumType.cup).toList();
+    final plushes = album
+        .where((entry) => entry.type == CollectibleAlbumType.plush)
+        .toList();
+    final unlockedCups = cups.where((entry) => entry.unlocked).length;
+    final unlockedPlushes = plushes.where((entry) => entry.unlocked).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'TAZAS · $unlockedCups / ${cups.length}',
+          style: const TextStyle(
+            color: gold,
+            fontSize: 12,
+            letterSpacing: 1,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '27 tazas coleccionables · 9 métodos por raza',
+          style: TextStyle(color: muted, fontSize: 11),
+        ),
+        const SizedBox(height: 12),
+        for (final breed in collectibleAlbumBreeds) ...[
+          _collectibleAlbumGroup(
+            breed.name,
+            cups.where((entry) => entry.breedId == breed.id).toList(),
+          ),
+          const SizedBox(height: 10),
+        ],
+        const Padding(
+          padding: EdgeInsets.only(bottom: 18),
+          child: Text(
+            'Las tazas se desbloquean cuando la bitácora registra tanto la raza '
+            'como el método de preparación.',
+            style: TextStyle(color: muted, fontSize: 10, height: 1.4),
+          ),
+        ),
+        Text(
+          'PELUCHES · $unlockedPlushes / ${plushes.length}',
+          style: const TextStyle(
+            color: gold,
+            fontSize: 12,
+            letterSpacing: 1,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '6 peluches coleccionables · 2 por raza',
+          style: TextStyle(color: muted, fontSize: 11),
+        ),
+        const SizedBox(height: 12),
+        for (final breed in collectibleAlbumBreeds) ...[
+          _collectibleAlbumGroup(
+            breed.name,
+            plushes.where((entry) => entry.breedId == breed.id).toList(),
+          ),
+          const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+
+  Widget _collectibleAlbumGroup(
+    String title,
+    List<CollectibleAlbumEntry> entries,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 7),
+          child: Text(
+            title.toUpperCase(),
+            style: const TextStyle(
+              color: cream,
+              fontSize: 10,
+              letterSpacing: 1,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 560 ? 3 : 2;
+            return GridView.builder(
+              key: ValueKey('collectible-album-${entries.first.id}'),
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: entries.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 0.82,
+              ),
+              itemBuilder: (context, index) {
+                final entry = entries[index];
+                final silhouette = entry.type == CollectibleAlbumType.cup
+                    ? Icons.local_cafe_outlined
+                    : Icons.pets_outlined;
+                final imageAsset = entry.imageAsset ??
+                    (entry.unlocked &&
+                            entry.type == CollectibleAlbumType.plush
+                        ? _collectibleFigureAsset(entry.modelCode)
+                        : null);
+                return Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: card,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: entry.unlocked
+                          ? gold.withValues(alpha: 0.7)
+                          : const Color(0xFF494139),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Semantics(
+                          label:
+                              '${entry.name}, ${entry.unlocked ? 'desbloqueada' : 'por descubrir'}',
+                          child: Stack(
+                            fit: StackFit.expand,
+                            alignment: Alignment.center,
+                            children: [
+                              if (imageAsset != null)
+                                Image.asset(
+                                  imageAsset,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      Icon(
+                                    silhouette,
+                                    size: 54,
+                                    color: entry.unlocked ? gold : card2,
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  silhouette,
+                                  size: 54,
+                                  color: entry.unlocked
+                                      ? gold.withValues(alpha: 0.9)
+                                      : const Color(0xFF45494B),
+                                ),
+                              if (!entry.unlocked)
+                                Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.all(7),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF171A1B)
+                                          .withValues(alpha: 0.92),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: muted.withValues(alpha: 0.35),
+                                      ),
+                                    ),
+                                    child: const Icon(
+                                      Icons.lock_outline,
+                                      color: cream2,
+                                      size: 19,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        entry.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: cream,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        entry.unlocked ? 'DESBLOQUEADA' : 'POR DESCUBRIR',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: entry.unlocked ? gold : muted,
+                          fontSize: 8,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -28875,8 +29022,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     Set<String> collectedFigureIds = const {},
     String? errorMessage,
   }) {
-    final seasonProgress = stamps % 9;
-    final season = stamps ~/ 9 + 1;
+    final seasonProgress = stamps % 16;
+    final season = stamps ~/ 16 + 1;
     const badgeMilestones = [4, 8, 16];
     return Padding(
       padding: const EdgeInsets.all(18),
@@ -28910,7 +29057,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '$seasonProgress de 9 consumos · Temporada $season',
+                  '$seasonProgress de 16 consumos · Temporada $season',
                   key: const ValueKey('cold-brew-album-stamp-count'),
                   style: const TextStyle(color: gold, fontSize: 20),
                 ),
@@ -30817,24 +30964,6 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     );
   }
 
-  Widget _orderCard(String number, String date, String items, String total,
-      String status, bool active) {
-    return Card(
-      color: card,
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        leading: Icon(Icons.receipt_long, color: active ? gold : muted),
-        title: Text('$number · $status',
-            style: const TextStyle(color: white, fontWeight: FontWeight.bold)),
-        subtitle: Text('$date\n$items',
-            style: const TextStyle(color: muted, height: 1.5)),
-        trailing: Text(total,
-            style: const TextStyle(color: cream, fontWeight: FontWeight.bold)),
-        isThreeLine: true,
-      ),
-    );
-  }
-
   Widget _petCard(PetProfile pet) {
     return Container(
       padding: const EdgeInsets.all(14),
@@ -31137,10 +31266,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         }
         final value = snapshot.data?.data()?['stamps'];
         final stamps = value is num ? value.toInt() : 0;
-        final milestoneProgress = stamps % 9;
+        final milestoneProgress = stamps % 16;
         final milestoneLabel = stamps > 0 && milestoneProgress == 0
-            ? '9/9 · hito alcanzado'
-            : '$milestoneProgress/9 para el siguiente hito';
+            ? '16/16 · hito alcanzado'
+            : '$milestoneProgress/16 para el siguiente hito';
         return _journalSection(
           icon: Icons.local_cafe_outlined,
           title: 'ÁLBUM COLD BREW',
@@ -31153,7 +31282,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 ),
               ),
               Icon(
-                stamps >= 9
+                stamps >= 16
                     ? Icons.verified_outlined
                     : Icons.local_fire_department_outlined,
                 color: gold,
@@ -31207,9 +31336,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 passportData?['rewardClaimed'] == true;
             final rawStamps = coldBrewSnapshot.data?.data()?['stamps'];
             final stamps = rawStamps is num ? rawStamps.toInt() : 0;
-            final nextMilestoneProgress = stamps % 9;
+            final nextMilestoneProgress = stamps % 16;
             final nextMilestone = stamps > 0 && nextMilestoneProgress == 0
-                ? 9
+                ? 16
                 : nextMilestoneProgress;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -31225,7 +31354,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 const SizedBox(height: 5),
                 Text(
                   'Cold Brew · $stamps consumos registrados · '
-                  '${stamps > 0 && nextMilestoneProgress == 0 ? '9/9 · hito alcanzado' : '$nextMilestone/9 hacia el siguiente hito'}',
+                  '${stamps > 0 && nextMilestoneProgress == 0 ? '16/16 · hito alcanzado' : '$nextMilestone/16 hacia el siguiente hito'}',
                   style: const TextStyle(color: cream, fontSize: 11),
                 ),
                 const SizedBox(height: 5),

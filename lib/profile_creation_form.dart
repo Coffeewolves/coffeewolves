@@ -303,10 +303,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
     );
   }
 
-  Future<void> _saveBirthdayConsent(
-    DateTime birthDate,
-    bool consent,
-  ) async {
+  Future<void> _saveBirthdayConsent(bool consent) async {
     final initialUser = _currentUser;
     if (initialUser == null) {
       setState(() {
@@ -331,29 +328,12 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
         );
       }
       await user.getIdToken(true);
-      final profileReference =
-          FirebaseFirestore.instance.collection('users').doc(user.uid);
       await FirebaseFirestore.instance
-          .runTransaction<void>((transaction) async {
-        final profile = await transaction.get(profileReference);
-        if (!profile.exists) {
-          throw StateError('No se encontró tu perfil de Coffee Wolves.');
-        }
-        final data = profile.data()!;
-        final storedBirthDate =
-            _dateFromStoredValue(data['birthDate'] ?? data['dateOfBirth']);
-        if (storedBirthDate == null ||
-            storedBirthDate.year != birthDate.year ||
-            storedBirthDate.month != birthDate.month ||
-            storedBirthDate.day != birthDate.day) {
-          throw StateError(
-            'La fecha de nacimiento del perfil cambió. Actualiza el perfil e inténtalo de nuevo.',
-          );
-        }
-        transaction.update(profileReference, {
-          'birthdayMarketingConsent': consent,
-          'birthdayConsentUpdatedAt': FieldValue.serverTimestamp(),
-        });
+          .collection('users')
+          .doc(user.uid)
+          .update({
+        'birthdayMarketingConsent': consent,
+        'birthdayConsentUpdatedAt': FieldValue.serverTimestamp(),
       });
       if (!mounted) return;
       setState(() {
@@ -1167,10 +1147,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
                 ),
                 onChanged: _isLoading
                     ? null
-                    : (consent) => _saveBirthdayConsent(
-                          _dateFromStoredValue(birthDate)!,
-                          consent,
-                        ),
+                    : _saveBirthdayConsent,
               ),
             if (_dateFromStoredValue(birthDate) == null)
               const Padding(

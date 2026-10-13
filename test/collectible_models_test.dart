@@ -44,4 +44,62 @@ void main() {
       expect(isValidCollectibleModelUnit('CW-CUP-010-0001'), isFalse);
     });
   });
+
+  group('Collectible album catalog', () {
+    test('contains 27 cups and six plushes across the three breeds', () {
+      final album = buildCollectibleAlbum();
+      final cups = album
+          .where((entry) => entry.type == CollectibleAlbumType.cup)
+          .toList();
+      final plushes = album
+          .where((entry) => entry.type == CollectibleAlbumType.plush)
+          .toList();
+
+      expect(album, hasLength(33));
+      expect(cups, hasLength(27));
+      expect(plushes, hasLength(6));
+      for (final breed in collectibleAlbumBreeds) {
+        expect(
+          cups.where((entry) => entry.breedId == breed.id),
+          hasLength(9),
+        );
+        expect(
+          plushes.where((entry) => entry.breedId == breed.id),
+          hasLength(2),
+        );
+      }
+      expect(cups.map((entry) => entry.methodId).toSet(), hasLength(9));
+      expect(album.every((entry) => !entry.unlocked), isTrue);
+    });
+
+    test('unlocks only owned plushes and cups with a recorded method', () {
+      final album = buildCollectibleAlbum(
+        ownedModelCodes: {'CW-PLUSH-001', 'CW-CUP-007'},
+        ownedCupMethodIds: {'chemex'},
+      );
+
+      expect(
+        album.singleWhere((entry) => entry.id == 'plush-pomi-1').unlocked,
+        isTrue,
+      );
+      expect(
+        album.singleWhere((entry) => entry.id == 'plush-pomi-2').unlocked,
+        isFalse,
+      );
+      expect(
+        album.singleWhere((entry) => entry.id == 'cup-pomi-chemex').unlocked,
+        isTrue,
+      );
+      expect(
+        album.singleWhere((entry) => entry.id == 'cup-pomi-cold-brew').unlocked,
+        isFalse,
+      );
+      expect(
+        album
+            .where((entry) => entry.breedId != 'pomi')
+            .every((entry) => !entry.unlocked),
+        isTrue,
+      );
+    });
+  });
 }
