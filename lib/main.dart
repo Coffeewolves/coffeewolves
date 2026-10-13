@@ -55,7 +55,6 @@ Future<void> main() async {
         ),
       );
     }
-
     runApp(const WolvesClubApp());
   } on FirebaseException catch (error, stackTrace) {
     debugPrint(
@@ -22798,7 +22797,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   key: const ValueKey('home-open-support'),
-                  onPressed: _showCustomerComplaintForm,
+                  onPressed: _openCustomerComplaintForm,
                   icon: const Icon(Icons.support_agent_outlined),
                   label: const Text('SOPORTE Y FEEDBACK'),
                   style: OutlinedButton.styleFrom(
@@ -27927,7 +27926,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             _profileOption(
               Icons.report_problem_outlined,
               'Soporte y Feedback de Clientes',
-              _showCustomerComplaintForm,
+              _openCustomerComplaintForm,
+              key: const ValueKey('profile-open-support'),
             ),
             const SizedBox(height: 22),
             SizedBox(
@@ -28608,6 +28608,22 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       subjectController.dispose();
       orderController.dispose();
     }
+  }
+
+  void _openCustomerComplaintForm() {
+    unawaited(
+      _showCustomerComplaintForm().catchError(
+        (Object error, StackTrace stackTrace) {
+          debugPrint('No se pudo abrir el formulario de soporte: $error');
+          debugPrintStack(stackTrace: stackTrace);
+          if (mounted) {
+            _showSnackBar(
+              'No se pudo abrir Soporte y Feedback. Inténtalo de nuevo.',
+            );
+          }
+        },
+      ),
+    );
   }
 
   // ==========================================================
@@ -31042,8 +31058,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     String label,
     VoidCallback onTap, {
     String? iconAsset,
+    Key? key,
   }) {
     return ListTile(
+      key: key,
       onTap: onTap,
       contentPadding: EdgeInsets.zero,
       leading: iconAsset == null

@@ -60,6 +60,7 @@ class _LostPetScreenState extends State<LostPetScreen> {
     LostPetMission? mission,
     List<Uint8List> draftPhotos = const [],
   }) async {
+    if (!_requireVerifiedEmail()) return;
     var initialPhotos = mission == null ? draftPhotos : const <Uint8List>[];
     var initialIdentification = '';
     try {
@@ -142,6 +143,7 @@ class _LostPetScreenState extends State<LostPetScreen> {
     List<LostPetMission> missions, {
     LostPetMission? initialMission,
   }) async {
+    if (!_requireVerifiedEmail()) return;
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => _SightingEditorScreen(
@@ -165,6 +167,17 @@ class _LostPetScreenState extends State<LostPetScreen> {
         const SnackBar(content: Text('Gracias por aportar este avistamiento.')),
       );
     }
+  }
+
+  bool _requireVerifiedEmail() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && !user.isAnonymous && user.emailVerified) return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Verifica el correo de tu cuenta para publicar o editar.'),
+      ),
+    );
+    return false;
   }
 
   Future<void> _openSharedMission({
@@ -271,13 +284,24 @@ class _LostPetScreenState extends State<LostPetScreen> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || user.isAnonymous || !user.emailVerified) {
+    if (user == null || user.isAnonymous) {
       return _scaffold(
-        body: const _EmptyState(
-          icon: Icons.lock_outline,
-          title: 'Un espacio para la Manada',
-          message:
-              'Inicia sesión y verifica tu correo para consultar o publicar misiones.',
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+          child: Column(
+            children: [
+              const _EmptyState(
+                icon: Icons.lock_outline,
+                title: 'Un espacio para la Manada',
+                message:
+                    'Inicia sesión para consultar misiones y compartir información.',
+              ),
+              const SizedBox(height: 12),
+              _guide(),
+              const SizedBox(height: 14),
+              _footerNotice(),
+            ],
+          ),
         ),
       );
     }
