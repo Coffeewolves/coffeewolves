@@ -5190,12 +5190,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     }
     setState(() {
       page = destination;
-      previousPage =
-          _pageHistory.isEmpty
-              ? (_menuReturnPreviousPage == 'menu'
-                  ? 'home'
-                  : _menuReturnPreviousPage)
-              : _pageHistory.last;
+      previousPage = _pageHistory.isEmpty
+          ? (_menuReturnPreviousPage == 'menu'
+              ? 'home'
+              : _menuReturnPreviousPage)
+          : _pageHistory.last;
     });
   }
 
@@ -9828,58 +9827,58 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       ),
                       const SizedBox(height: 16),
                     ],
-                const Text(
-                  'COFFEE WOLVES · AUTHENTICITY CHECK',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: gold,
-                    fontSize: 11,
-                    letterSpacing: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Icon(
-                  valid ? Icons.verified : Icons.gpp_bad_outlined,
-                  color: valid ? gold : const Color(0xFFE6A296),
-                  size: 52,
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: valid ? gold : const Color(0xFFE6A296),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (code != null)
-                  SelectableText(
-                    code,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: cream,
-                      fontSize: 17,
-                      letterSpacing: 1.5,
+                    const Text(
+                      'COFFEE WOLVES · AUTHENTICITY CHECK',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: gold,
+                        fontSize: 11,
+                        letterSpacing: 1.4,
+                      ),
                     ),
-                  ),
-                const SizedBox(height: 12),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: cream2,
-                    fontSize: 12,
-                    height: 1.6,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'La verificación pública no muestra información del titular.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: muted, fontSize: 10),
-                ),
+                    const SizedBox(height: 20),
+                    Icon(
+                      valid ? Icons.verified : Icons.gpp_bad_outlined,
+                      color: valid ? gold : const Color(0xFFE6A296),
+                      size: 52,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: valid ? gold : const Color(0xFFE6A296),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (code != null)
+                      SelectableText(
+                        code,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: cream,
+                          fontSize: 17,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: cream2,
+                        fontSize: 12,
+                        height: 1.6,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'La verificación pública no muestra información del titular.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: muted, fontSize: 10),
+                    ),
                   ],
                 ),
               ),
@@ -11945,8 +11944,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         return LostPetScreen(
           onBack: back,
           initialMissionId: _sharedLostPetMissionId,
-          onSharedMissionConsumed: () =>
-              _sharedLostPetMissionOpened = true,
+          onSharedMissionConsumed: () => _sharedLostPetMissionOpened = true,
         );
 
       case 'legacy':
@@ -22793,6 +22791,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               const SizedBox(height: 12),
               _publicAnnouncementsPreview(),
 
+              const SizedBox(height: 20),
+              _socialLinksSection(),
               const SizedBox(height: 18),
               SizedBox(
                 width: double.infinity,
@@ -22808,8 +22808,6 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-              _socialLinksSection(),
             ],
           ),
         ),
@@ -28292,10 +28290,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       'Mi Bitácora',
                       'Wolves Member Card',
                       'Billetera',
-                      'Wolves Match',
-                      'Hoy nos falta uno',
                       'Mis Colecciones',
                       'Álbum Cold Brew',
+                      'Wolves Match',
+                      'Hoy nos falta uno',
                       'Mis Mascotas',
                       'Mis Pedidos',
                       'Otro',

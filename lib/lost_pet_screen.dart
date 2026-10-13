@@ -35,14 +35,17 @@ class _LostPetScreenState extends State<LostPetScreen> {
   static const _muted = Color(0xFFB7AA9D);
 
   final _service = LostPetService();
+  final _draftPhotoPicker = ImagePicker();
   final _searchController = TextEditingController();
   final _cityController = TextEditingController();
   final _areaController = TextEditingController();
+  final List<Uint8List> _draftMissionPhotos = [];
   String _section = 'home';
   String _speciesFilter = 'all';
   String _statusFilter = 'all';
   String _dateFilter = 'all';
   String? _error;
+  bool _pickingDraftPhotos = false;
   bool _deepLinkHandled = false;
 
   @override
@@ -55,8 +58,9 @@ class _LostPetScreenState extends State<LostPetScreen> {
 
   Future<void> _openMissionForm({
     LostPetMission? mission,
+    List<Uint8List> draftPhotos = const [],
   }) async {
-    List<Uint8List> initialPhotos = const [];
+    var initialPhotos = mission == null ? draftPhotos : const <Uint8List>[];
     var initialIdentification = '';
     try {
       if (mission != null) {
@@ -90,6 +94,7 @@ class _LostPetScreenState extends State<LostPetScreen> {
       setState(() {
         _error = null;
         _section = 'missions';
+        if (mission == null) _draftMissionPhotos.clear();
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -100,6 +105,36 @@ class _LostPetScreenState extends State<LostPetScreen> {
           ),
         ),
       );
+    }
+  }
+
+  Future<void> _pickDraftMissionPhotos() async {
+    if (_pickingDraftPhotos || _draftMissionPhotos.length >= 3) return;
+    setState(() => _pickingDraftPhotos = true);
+    try {
+      final selected = await _draftPhotoPicker.pickMultiImage(
+        imageQuality: 100,
+        maxWidth: 1800,
+        maxHeight: 1800,
+      );
+      final remaining = 3 - _draftMissionPhotos.length;
+      final added = <Uint8List>[];
+      for (final image in selected.take(remaining)) {
+        added.add(
+          await compute(compressProfileImageBytes, await image.readAsBytes()),
+        );
+      }
+      if (mounted && added.isNotEmpty) {
+        setState(() => _draftMissionPhotos.addAll(added));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudieron cargar las fotos: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _pickingDraftPhotos = false);
     }
   }
 
@@ -466,6 +501,8 @@ class _LostPetScreenState extends State<LostPetScreen> {
             children: [
               if (_section == 'home') ...[
                 _hero(missions, sightings),
+                const SizedBox(height: 14),
+                _photoUploadCard(),
                 const SizedBox(height: 20),
                 _sectionTitle('MISIONES DE REENCUENTRO'),
                 const SizedBox(height: 10),
@@ -581,15 +618,6 @@ class _LostPetScreenState extends State<LostPetScreen> {
               spacing: 10,
               runSpacing: 10,
               children: [
-                FilledButton.icon(
-                  onPressed: () => _openMissionForm(),
-                  icon: const Icon(Icons.campaign_outlined),
-                  label: const Text('MI MASCOTA ESTÁ PERDIDA'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _gold,
-                    foregroundColor: _background,
-                  ),
-                ),
                 OutlinedButton.icon(
                   onPressed: () => _openSightingForm(missions),
                   icon: const Icon(Icons.visibility_outlined),
@@ -991,18 +1019,46 @@ class _LostPetScreenState extends State<LostPetScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    [
-                      _speciesLabel(mission.species),
-                      if (mission.breed.isNotEmpty) mission.breed,
-                      if (mission.color.isNotEmpty) mission.color,
-                    ].join(' · '),
-                    style: const TextStyle(color: _muted, fontSize: 12),
+                  const SizedBox(height: 9),
+                  const Text(
+                    'DATOS DE LA MASCOTA',
+                    style: TextStyle(
+                      color: _gold,
+                      fontSize: 10,
+                      letterSpacing: 0.9,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _detailChip(_speciesLabel(mission.species)),
+                      if (mission.breed.isNotEmpty) _detailChip(mission.breed),
+                      if (mission.size != 'unknown' && mission.size.isNotEmpty)
+                        _detailChip(_sizeLabel(mission.size)),
+                      if (mission.color.isNotEmpty) _detailChip(mission.color),
+                      if (mission.sex != 'unknown' && mission.sex.isNotEmpty)
+                        _detailChip(_sexLabel(mission.sex)),
+                      if (mission.markings.isNotEmpty)
+                        _detailChip('Señas: ${mission.markings}'),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'DESCRIPCIÓN DE LA PÉRDIDA',
+                    style: TextStyle(
+                      color: _gold,
+                      fontSize: 10,
+                      letterSpacing: 0.9,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     mission.description,
-                    maxLines: 2,
+                    maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: _cream, height: 1.4),
                   ),
@@ -1025,6 +1081,32 @@ class _LostPetScreenState extends State<LostPetScreen> {
       ),
     );
   }
+
+  Widget _detailChip(String label) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: _gold.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _gold.withValues(alpha: 0.18)),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(color: _cream, fontSize: 10),
+        ),
+      );
+
+  String _sizeLabel(String size) => switch (size) {
+        'small' => 'Pequeño',
+        'medium' => 'Mediano',
+        'large' => 'Grande',
+        _ => 'Tamaño no conocido',
+      };
+
+  String _sexLabel(String sex) => switch (sex) {
+        'female' => 'Hembra',
+        'male' => 'Macho',
+        _ => 'Sexo no conocido',
+      };
 
   Widget _imagePlaceholder() => Container(
         height: 180,
@@ -1073,6 +1155,165 @@ class _LostPetScreenState extends State<LostPetScreen> {
           ),
         ],
       );
+
+  Widget _photoUploadCard() {
+    final hasPhotos = _draftMissionPhotos.isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _panel,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _gold.withValues(alpha: 0.34)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'SUBE LA FOTO DE TU AMIGO PERDIDO',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _cream,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Una imagen clara puede ayudar a reconocerlo y compartir su búsqueda.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _muted, fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          Material(
+            color: _background.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              onTap: _pickingDraftPhotos ? null : _pickDraftMissionPhotos,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 196),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _gold.withValues(alpha: 0.65),
+                    width: 1.2,
+                  ),
+                ),
+                child: hasPhotos
+                    ? SizedBox(
+                        height: 190,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _draftMissionPhotos.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(width: 10),
+                          itemBuilder: (context, index) => Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.memory(
+                                  _draftMissionPhotos[index],
+                                  width: 220,
+                                  height: 190,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: IconButton(
+                                  tooltip: 'Quitar foto',
+                                  onPressed: () => setState(
+                                    () => _draftMissionPhotos.removeAt(index),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.white,
+                                  ),
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: Colors.black54,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _pickingDraftPhotos
+                                  ? Icons.hourglass_top
+                                  : Icons.add_a_photo_outlined,
+                              color: _gold,
+                              size: 48,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _pickingDraftPhotos
+                                  ? 'CARGANDO FOTO…'
+                                  : 'TOCA PARA SUBIR LA FOTO DE TU MASCOTA',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: _cream,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            const Text(
+                              'Puedes agregar hasta 3 fotos',
+                              style: TextStyle(color: _muted, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          if (hasPhotos) ...[
+            const SizedBox(height: 9),
+            Text(
+              '${_draftMissionPhotos.length} foto${_draftMissionPhotos.length == 1 ? '' : 's'} lista${_draftMissionPhotos.length == 1 ? '' : 's'} para el aviso',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: _gold, fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _pickingDraftPhotos
+                ? null
+                : hasPhotos
+                    ? () => _openMissionForm(
+                          draftPhotos: List.unmodifiable(_draftMissionPhotos),
+                        )
+                    : _pickDraftMissionPhotos,
+            icon: Icon(
+              hasPhotos ? Icons.edit_note : Icons.add_a_photo_outlined,
+            ),
+            label: Text(
+              hasPhotos ? 'COMPLETAR DATOS DE LA PÉRDIDA' : 'ELEGIR FOTOGRAFÍA',
+            ),
+            style: FilledButton.styleFrom(
+              backgroundColor: _gold,
+              foregroundColor: _background,
+              padding: const EdgeInsets.symmetric(vertical: 13),
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'La publicación se comparte cuando completes y confirmes la misión.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _muted, fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _sightingCard(
     Map<String, dynamic> data,
@@ -1703,8 +1944,7 @@ class _MissionDetailsSheetState extends State<_MissionDetailsSheet> {
             _detailLine('Descripción', mission.description),
             if (widget.isOwner)
               FutureBuilder<String>(
-                future: widget.service
-                    .getPrivateIdentification(mission.id),
+                future: widget.service.getPrivateIdentification(mission.id),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return const Text(
@@ -1794,13 +2034,15 @@ class _MissionDetailsSheetState extends State<_MissionDetailsSheet> {
                       onPressed: _busy ? null : () => _updateStatus('closed'),
                       child: const Text('CERRAR MISIÓN'),
                     ),
-                  for (final nextStatus
-                      in const ['active', 'sightings', 'verifying'])
+                  for (final nextStatus in const [
+                    'active',
+                    'sightings',
+                    'verifying'
+                  ])
                     if (nextStatus != mission.status)
                       TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => _updateStatus(nextStatus),
+                        onPressed:
+                            _busy ? null : () => _updateStatus(nextStatus),
                         child: Text(
                           switch (nextStatus) {
                             'active' => 'BÚSQUEDA ACTIVA',
