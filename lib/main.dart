@@ -22793,6 +22793,21 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               const SizedBox(height: 12),
               _publicAnnouncementsPreview(),
 
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  key: const ValueKey('home-open-support'),
+                  onPressed: _showCustomerComplaintForm,
+                  icon: const Icon(Icons.support_agent_outlined),
+                  label: const Text('SOPORTE Y FEEDBACK'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: gold,
+                    side: BorderSide(color: gold.withValues(alpha: 0.55)),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                ),
+              ),
               const SizedBox(height: 20),
               _socialLinksSection(),
             ],
@@ -28277,6 +28292,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       'Mi Bitácora',
                       'Wolves Member Card',
                       'Billetera',
+                      'Wolves Match',
+                      'Hoy nos falta uno',
                       'Mis Colecciones',
                       'Álbum Cold Brew',
                       'Mis Mascotas',

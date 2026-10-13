@@ -837,27 +837,70 @@ class _LostPetScreenState extends State<LostPetScreen> {
     required String userUid,
   }) {
     if (items.isEmpty) {
-      return _EmptyState(
-        icon: _section == 'reunited'
-            ? Icons.favorite_border
-            : Icons.pets_outlined,
-        title: _section == 'reunited'
-            ? 'Aún no hay historias para celebrar'
-            : 'No encontramos misiones con esos filtros',
-        message: _section == 'reunited'
-            ? 'Cuando una familia autorice compartir su reencuentro, aparecerá aquí.'
-            : 'Puedes ampliar los filtros, publicar una búsqueda o aportar un avistamiento.',
-        actionLabel: _section == 'reunited' ? null : 'LIMPIAR FILTROS',
-        onAction: _section == 'reunited'
-            ? null
-            : () => setState(() {
-                  _searchController.clear();
-                  _cityController.clear();
-                  _areaController.clear();
-                  _speciesFilter = 'all';
-                  _statusFilter = 'all';
-                  _dateFilter = 'all';
-                }),
+      final hasActiveMissions = missions.any(
+        (mission) =>
+            const {'active', 'sightings', 'verifying'}.contains(mission.status),
+      );
+      final noResultsAfterFiltering =
+          hasActiveMissions && (_section == 'home' || _section == 'missions');
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _EmptyState(
+            icon: _section == 'reunited'
+                ? Icons.favorite_border
+                : Icons.pets_outlined,
+            title: _section == 'reunited'
+                ? 'Aún no hay historias para celebrar'
+                : noResultsAfterFiltering
+                    ? 'No encontramos misiones con esos filtros'
+                    : _section == 'myMissions'
+                        ? 'Aún no has publicado una misión'
+                        : 'Todavía no hay misiones activas',
+            message: _section == 'reunited'
+                ? 'Cuando una familia autorice compartir su reencuentro, aparecerá aquí.'
+                : noResultsAfterFiltering
+                    ? 'Amplía los filtros para ver otras búsquedas de la comunidad.'
+                    : 'Puedes iniciar una misión de reencuentro o ayudar reportando un avistamiento.',
+            actionLabel: noResultsAfterFiltering ? 'LIMPIAR FILTROS' : null,
+            onAction: noResultsAfterFiltering
+                ? () => setState(() {
+                      _searchController.clear();
+                      _cityController.clear();
+                      _areaController.clear();
+                      _speciesFilter = 'all';
+                      _statusFilter = 'all';
+                      _dateFilter = 'all';
+                    })
+                : null,
+          ),
+          if (_section != 'reunited') ...[
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              key: const ValueKey('lost-pet-empty-create-mission'),
+              onPressed: () => _openMissionForm(),
+              icon: const Icon(Icons.add_circle_outline),
+              label: const Text('PUBLICAR UNA MISIÓN DE REENCUENTRO'),
+              style: FilledButton.styleFrom(
+                backgroundColor: _gold,
+                foregroundColor: _background,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+              ),
+            ),
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              key: const ValueKey('lost-pet-empty-report-sighting'),
+              onPressed: () => _openSightingForm(missions),
+              icon: const Icon(Icons.visibility_outlined),
+              label: const Text('REPORTAR UN AVISTAMIENTO'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _cream,
+                side: BorderSide(color: _gold.withValues(alpha: 0.55)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ],
+        ],
       );
     }
     return Column(

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'coffee_pup_game_screen.dart';
 import 'coffee_pup_game_service.dart';
@@ -647,17 +648,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
           _sectionTitle('INTERÉS ENVIADO', Icons.schedule_outlined),
           ..._profiles('outgoing').map(_outgoingCard),
         ],
-        _sectionTitle(
-          'ROMPEHIELOS Y JUEGOS',
-          Icons.sports_esports_outlined,
-        ),
-        if (_profiles('connections').isEmpty)
-          _emptyState(
-            'Haz una conexión mutua para jugar Trivia Café & Perritos, '
-            'comparar preferencias y usar las preguntas rompehielos.',
-          )
-        else
-          ..._profiles('connections').map(_connectionCard),
+        _dynamicsSection(),
         const SizedBox(height: 10),
         OutlinedButton.icon(
           onPressed:
@@ -1208,6 +1199,221 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
         profile,
         statusLabel: 'Interés enviado · esperando respuesta',
       );
+
+  Widget _dynamicsSection() {
+    final connections = _profiles('connections');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _sectionTitle('ROMPEHIELOS Y JUEGOS', Icons.sports_esports_outlined),
+        if (connections.isEmpty) ...[
+          const SizedBox(height: 8),
+          _emptyState(
+            'Las dinámicas en pareja se habilitan cuando tú y otro miembro '
+            'aceptan el interés. Mientras tanto, puedes explorar los '
+            'rompehielos.',
+          ),
+          _lockedDynamicsCard(
+            icon: Icons.coffee_outlined,
+            title: 'TRIVIA · CAFÉ Y PERRITOS',
+            description:
+                'Rondas por turnos con preguntas para poner a prueba sus gustos.',
+          ),
+          _lockedDynamicsCard(
+            icon: Icons.favorite_outline,
+            title: '¿QUÉ PREFIEREN?',
+            description:
+                'Cinco dilemas para comparar preferencias con tu conexión.',
+          ),
+          _icebreakerPreviewCard(),
+        ] else ...[
+          ...connections.map(_connectionCard),
+        ],
+      ],
+    );
+  }
+
+  Widget _lockedDynamicsCard({
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(top: 9),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFF5A4934)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: _gold),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: _cream,
+                    fontSize: 11,
+                    letterSpacing: 0.7,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 11,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                const Text(
+                  'Se desbloquea con una conexión mutua',
+                  style: TextStyle(color: _gold, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.lock_outline, color: _muted, size: 17),
+        ],
+      ),
+    );
+  }
+
+  Widget _icebreakerPreviewCard() {
+    return Container(
+      margin: const EdgeInsets.only(top: 9),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFF5A4934)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.quiz_outlined, color: _gold),
+          const SizedBox(width: 11),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'PREGUNTAS ROMPEHIELOS',
+                  style: TextStyle(
+                    color: _cream,
+                    fontSize: 11,
+                    letterSpacing: 0.7,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Explora las preguntas y comparte una para iniciar una charla.',
+                  style: TextStyle(color: _muted, fontSize: 11, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            key: const ValueKey('match-preview-icebreakers'),
+            onPressed: _previewIcebreakers,
+            child: const Text('VER'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _previewIcebreakers() async {
+    var questionIndex = 0;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final question =
+              WolvesMatchService.icebreakerQuestions[questionIndex];
+          return AlertDialog(
+            backgroundColor: _card,
+            title: const Text(
+              'PREGUNTA ROMPEHIELOS',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _gold, letterSpacing: 1),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'PREGUNTA ${questionIndex + 1} DE '
+                  '${WolvesMatchService.icebreakerQuestions.length}',
+                  style: const TextStyle(color: _muted, fontSize: 10),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  question.prompt,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _cream,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                for (final option in question.options)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Text(
+                      option,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: _muted, fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: questionIndex == 0
+                    ? null
+                    : () => setDialogState(() => questionIndex--),
+                child: const Text('ANTERIOR'),
+              ),
+              TextButton(
+                onPressed: questionIndex ==
+                        WolvesMatchService.icebreakerQuestions.length - 1
+                    ? null
+                    : () => setDialogState(() => questionIndex++),
+                child: const Text('SIGUIENTE'),
+              ),
+              TextButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(
+                    ClipboardData(text: question.prompt),
+                  );
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      const SnackBar(content: Text('Pregunta copiada.')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.copy_outlined, size: 16),
+                label: const Text('COPIAR'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('CERRAR'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   Widget _connectionCard(Map<String, dynamic> profile) => _profileCard(
         profile,
