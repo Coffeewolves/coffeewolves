@@ -11840,7 +11840,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         return _matchCelebration();
 
       case 'wolvesMatch':
-        return WolvesMatchScreen(onClose: () => go(previousPage));
+        return WolvesMatchScreen(onClose: back);
 
       case 'mischiefWall':
         return MischiefWallScreen(onClose: () => go(previousPage));

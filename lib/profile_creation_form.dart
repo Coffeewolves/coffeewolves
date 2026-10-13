@@ -333,7 +333,8 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       await user.getIdToken(true);
       final profileReference =
           FirebaseFirestore.instance.collection('users').doc(user.uid);
-      await FirebaseFirestore.instance.runTransaction<void>((transaction) async {
+      await FirebaseFirestore.instance
+          .runTransaction<void>((transaction) async {
         final profile = await transaction.get(profileReference);
         if (!profile.exists) {
           throw StateError('No se encontró tu perfil de Coffee Wolves.');
@@ -385,8 +386,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage =
-            'No se pudo guardar el consentimiento de cumpleaños.';
+        _errorMessage = 'No se pudo guardar el consentimiento de cumpleaños.';
       });
     }
   }
@@ -420,14 +420,14 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       await user.getIdToken(true);
       final profileReference =
           FirebaseFirestore.instance.collection('users').doc(user.uid);
-      await FirebaseFirestore.instance.runTransaction<void>((transaction) async {
+      await FirebaseFirestore.instance
+          .runTransaction<void>((transaction) async {
         final profile = await transaction.get(profileReference);
         if (!profile.exists) {
           throw StateError('No se encontró tu perfil de Coffee Wolves.');
         }
         final data = profile.data()!;
-        if (data.containsKey('birthDate') ||
-            data.containsKey('dateOfBirth')) {
+        if (data.containsKey('birthDate') || data.containsKey('dateOfBirth')) {
           throw StateError(
             'Ya existe una fecha de nacimiento en tu perfil. Actualiza la página e inténtalo de nuevo.',
           );
@@ -1023,12 +1023,10 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       stream: profileStream,
       builder: (context, snapshot) {
         final profile = snapshot.data?.data();
-        final storedName = (profile?['displayName'] as String?)?.trim();
-        final name = storedName?.isNotEmpty == true
-            ? storedName!
-            : user.displayName?.trim().isNotEmpty == true
-                ? user.displayName!.trim()
-                : 'Usuario Wolves';
+        final storedUsername = (profile?['username'] as String?)?.trim();
+        final username = storedUsername?.isNotEmpty == true
+            ? '@$storedUsername'
+            : 'Username no disponible';
         final email = (profile?['email'] as String?)?.trim();
         final storedPhone = (profile?['phoneNumber'] as String?)?.trim();
         final phone =
@@ -1083,7 +1081,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
               children: [
                 Flexible(
                   child: Text(
-                    name,
+                    username,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: _cream,

@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'interstitial_ads_service.dart';
 import 'mischief_wall_screen.dart';
 import 'wolves_match_service.dart';
 
@@ -377,11 +376,10 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
     }
   }
 
-  Future<void> _closeWithInterstitial() async {
+  void _closeMatch() {
     if (_leaving) return;
     _leaving = true;
-    await InterstitialAdsService.showBeforeLeaving();
-    if (mounted) widget.onClose();
+    widget.onClose();
   }
 
   Future<void> _openMischiefWall() async {
@@ -446,7 +444,8 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
     return Row(
       children: [
         IconButton(
-          onPressed: _leaving ? null : _closeWithInterstitial,
+          key: const ValueKey('wolves-match-back'),
+          onPressed: _leaving ? null : _closeMatch,
           tooltip: 'Volver',
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
           color: _gold,
