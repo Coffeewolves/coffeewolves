@@ -31,4 +31,24 @@ void main() {
       );
     });
   });
+
+  group('videoContentTypeForFileName', () {
+    test('detects supported video extensions case-insensitively', () {
+      expect(
+        MischiefWallService.videoContentTypeForFileName('Perrito.MOV'),
+        'video/quicktime',
+      );
+      expect(
+        MischiefWallService.videoContentTypeForFileName('travesura.webm'),
+        'video/webm',
+      );
+    });
+
+    test('rejects formats not supported in the wall', () {
+      expect(
+        () => MischiefWallService.videoContentTypeForFileName('video.avi'),
+        throwsFormatException,
+      );
+    });
+  });
 }

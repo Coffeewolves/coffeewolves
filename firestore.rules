@@ -816,6 +816,43 @@ service cloud.firestore {
         && request.auth != null
         && request.auth.token.firebase.sign_in_provider != 'anonymous';
       allow list: if false;
+      allow create: if statsId == 'mischiefWall'
+        && request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'memberCount', 'dailyPostDate', 'dailyPostCount',
+          'lastMemberUid', 'lastPostId', 'updatedAt'
+        ])
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.memberCount == 1
+        && request.resource.data.dailyPostDate is string
+        && request.resource.data.dailyPostDate.matches(
+          '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+        )
+        && (
+          (
+            request.resource.data.dailyPostCount == 1
+            && request.resource.data.lastMemberUid == ''
+            && request.resource.data.lastPostId is string
+            && request.auth.token.email_verified == true
+            && getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            ).data.ownerUid == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            ).data.createdAt == request.time
+          )
+          || (
+            request.resource.data.dailyPostCount == 0
+            && request.resource.data.lastMemberUid == request.auth.uid
+            && request.resource.data.lastPostId == ''
+            && getAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.createdAt == request.time
+            && getAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.email == request.auth.token.email
+          )
+        );
       allow update: if statsId == 'mischiefWall'
         && request.auth != null
         && request.resource.data.updatedAt == request.time
@@ -878,13 +915,14 @@ service cloud.firestore {
         && request.auth.token.email_verified == true
         && request.resource.data.keys().hasOnly([
           'ownerUid', 'ownerName', 'dogName', 'description',
-          'photoBase64', 'fecha_Expiracion', 'innocentVotes',
+          'mediaType', 'mediaContentType', 'photoBase64',
+          'videoChunkCount', 'fecha_Expiracion', 'innocentVotes',
           'guiltyVotes', 'createdAt'
         ])
         && request.resource.data.keys().hasAll([
           'ownerUid', 'ownerName', 'dogName', 'description',
-          'photoBase64', 'fecha_Expiracion', 'innocentVotes',
-          'guiltyVotes', 'createdAt'
+          'mediaType', 'mediaContentType', 'fecha_Expiracion',
+          'innocentVotes', 'guiltyVotes', 'createdAt'
         ])
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerName is string
@@ -896,9 +934,25 @@ service cloud.firestore {
         && request.resource.data.description is string
         && request.resource.data.description.size() >= 1
         && request.resource.data.description.size() <= 300
-        && request.resource.data.photoBase64 is string
-        && request.resource.data.photoBase64.size() >= 4
-        && request.resource.data.photoBase64.size() <= 273100
+        && (
+          (
+            request.resource.data.mediaType == 'image'
+            && request.resource.data.mediaContentType == 'image/jpeg'
+            && request.resource.data.photoBase64 is string
+            && request.resource.data.photoBase64.size() >= 4
+            && request.resource.data.photoBase64.size() <= 273100
+            && !('videoChunkCount' in request.resource.data)
+          )
+          || (
+            request.resource.data.mediaType == 'video'
+            && request.resource.data.mediaContentType
+              in ['video/mp4', 'video/quicktime', 'video/webm']
+            && request.resource.data.videoChunkCount is int
+            && request.resource.data.videoChunkCount >= 1
+            && request.resource.data.videoChunkCount <= 12
+            && !('photoBase64' in request.resource.data)
+          )
+        )
         && request.resource.data.fecha_Expiracion is timestamp
         && request.resource.data.fecha_Expiracion > request.time
         && getAfter(
@@ -941,6 +995,34 @@ service cloud.firestore {
 
       match /votes/{userId} {
         allow read, write: if false;
+      }
+
+      match /videoChunks/{chunkId} {
+        allow get, list: if request.auth != null
+          && request.auth.token.firebase.sign_in_provider != 'anonymous';
+        allow create: if request.auth != null
+          && request.auth.token.email_verified == true
+          && request.resource.data.keys().hasOnly([
+            'index', 'ownerUid', 'dataBase64'
+          ])
+          && request.resource.data.index is int
+          && request.resource.data.index >= 0
+          && request.resource.data.index < 12
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.dataBase64 is string
+          && request.resource.data.dataBase64.size() >= 4
+          && request.resource.data.dataBase64.size() <= 614400
+          && getAfter(
+            /databases/$(database)/documents/mischiefPosts/$(postId)
+          ).data.ownerUid == request.auth.uid
+          && getAfter(
+            /databases/$(database)/documents/mischiefPosts/$(postId)
+          ).data.mediaType == 'video'
+          && request.resource.data.index
+            < getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(postId)
+            ).data.videoChunkCount;
+        allow update, delete: if false;
       }
     }
 

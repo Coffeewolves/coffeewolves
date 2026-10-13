@@ -13,6 +13,13 @@ const fieldValue = admin.firestore.FieldValue;
 
 async function migrateAndDeleteExpiredPosts(now) {
   const posts = db.collection('mischiefPosts');
+  const deleteExpiredPost = async (post) => {
+    const chunks = await post.ref.collection('videoChunks').get();
+    const batch = db.batch();
+    for (const chunk of chunks.docs) batch.delete(chunk.ref);
+    batch.delete(post.ref);
+    await batch.commit();
+  };
   let cursor;
   let scanned = 0;
   let deleted = 0;
@@ -41,8 +48,9 @@ async function migrateAndDeleteExpiredPosts(now) {
           : new Date(expirationDate.getTime() + 7 * 24 * 60 * 60 * 1000);
 
       if (effectiveExpiration <= now) {
-        batch.delete(document.ref);
+        await deleteExpiredPost(document);
         deleted += 1;
+        continue;
       } else if (!(expiration instanceof timestamp)) {
         batch.update(document.ref, {
           fecha_Expiracion: timestamp.fromDate(effectiveExpiration),
@@ -68,38 +76,50 @@ async function migrateAndDeleteExpiredPosts(now) {
 async function initializeCommunityStats(now) {
   const statsRef = db.collection('communityStats').doc('mischiefWall');
   const existingStats = await statsRef.get();
-  if (existingStats.exists) return;
-
+  const recountMembers = process.argv.includes('--recount-members');
+  if (existingStats.exists && !recountMembers) return;
   const utcMidnight = new Date(Date.UTC(
     now.getUTCFullYear(),
     now.getUTCMonth(),
     now.getUTCDate(),
   ));
-  const [users, postsToday] = await Promise.all([
-    db.collection('users').count().get(),
-    db.collection('mischiefPosts')
+  const users = await db.collection('users').count().get();
+  const postsToday = existingStats.exists
+    ? null
+    : await db.collection('mischiefPosts')
       .where('createdAt', '>=', timestamp.fromDate(utcMidnight))
       .count()
-      .get(),
-  ]);
+      .get();
   const dateKey = now.toISOString().slice(0, 10);
 
   await db.runTransaction(async (transaction) => {
     const currentStats = await transaction.get(statsRef);
-    if (currentStats.exists) return;
-    transaction.create(statsRef, {
-      memberCount: users.data().count,
-      dailyPostDate: dateKey,
-      dailyPostCount: postsToday.data().count,
-      lastMemberUid: '',
-      lastPostId: '',
-      updatedAt: fieldValue.serverTimestamp(),
-    });
+    if (currentStats.exists) {
+      if (recountMembers) {
+        transaction.update(statsRef, {
+          memberCount: users.data().count,
+          updatedAt: fieldValue.serverTimestamp(),
+        });
+      }
+    } else {
+      transaction.create(statsRef, {
+        memberCount: users.data().count,
+        dailyPostDate: dateKey,
+        dailyPostCount: postsToday.data().count,
+        lastMemberUid: '',
+        lastPostId: '',
+        updatedAt: fieldValue.serverTimestamp(),
+      });
+    }
   });
-  console.log(
-    `Contadores inicializados: ${users.data().count} miembros y ` +
-    `${postsToday.data().count} publicaciones hoy (UTC).`,
-  );
+  if (existingStats.exists) {
+    console.log(`Contador de miembros actualizado: ${users.data().count}.`);
+  } else {
+    console.log(
+      `Contadores inicializados: ${users.data().count} miembros y ` +
+      `${postsToday.data().count} publicaciones hoy (UTC).`,
+    );
+  }
 }
 
 async function runMaintenance() {

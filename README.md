@@ -21,12 +21,14 @@ Authentication > Proveedores de acceso y que el dominio publicado figure en
 Authentication > Configuración > Dominios autorizados.
 
 El plan Spark permite Firebase Authentication y Firestore. Las fotos del Muro
-de las Travesuras se guardan como JPEG optimizados en Firestore, con un máximo
-de 200 KB por foto; no requieren Storage ni crean un bucket. Las galerías de
-mascotas y otras funciones que sí usan Firebase Storage seguirán necesitando
-que ese servicio esté disponible en el proyecto. La app no activa Blaze.
+se guardan como JPEG optimizados en Firestore (máximo 200 KB) y los videos
+como clips MP4, MOV o WebM de hasta 15 segundos y 5 MB. Los videos se dividen
+en documentos Firestore para respetar el límite de tamaño por documento. Estas
+publicaciones no requieren Storage ni crean un bucket. Las galerías de mascotas
+y otras funciones que sí usan Firebase Storage seguirán necesitando ese
+servicio. La app no activa Blaze.
 
-#### Retención de fotos del Muro
+#### Retención de publicaciones del Muro
 
 Las publicaciones nuevas vencen inicialmente a los 7 días. El contador se
 actualiza con cada publicación y registro: al llegar a 5.000 documentos de
@@ -43,21 +45,24 @@ Application Default Credentials como una persona con acceso al proyecto:
 cd functions
 npm install
 gcloud auth application-default login
-node cleanup_mischief_posts.js --watch
+node cleanup_mischief_posts.js --watch --recount-members
 ```
 
-Mantén ese proceso local ejecutándose: revisa el Muro cada 6 horas. El primer
-inicio calcula el total de usuarios y publicaciones del día y crea el contador
-que necesita la app antes de publicar. Para aplicar las reglas e índice nuevos
-de Firestore:
+La app crea el contador automáticamente al registrar al primer miembro nuevo
+o guardar la primera publicación, así que no hace falta ejecutar el script para
+poder publicar. `--recount-members` vuelve a contar los usuarios existentes
+para que el umbral de 5.000 refleje toda la comunidad actual y no solo miembros
+nuevos desde la activación de este contador. Mantén ese proceso local abierto:
+limpia las publicaciones vencidas cada 6 horas y vuelve a ajustar el total de
+miembros. Para aplicar las reglas e índice nuevos de Firestore:
 
 ```bash
 firebase deploy --only firestore:rules,firestore:indexes --project wolves-club-fb24a
 ```
 
-Esta estrategia consume cuota de Firestore Spark; cada imagen se convierte a
-Base64 dentro del documento y ocupa más espacio que el JPEG original. El
-proceso local no activa Blaze ni crea un bucket.
+Esta estrategia consume cuota de Firestore Spark; las imágenes se convierten a
+Base64 y los videos generan múltiples escrituras y lecturas. El proceso local
+no activa Blaze ni crea un bucket.
 
 ## Menú
 

@@ -740,6 +740,19 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
                 'lastMemberUid': user.uid,
                 'updatedAt': FieldValue.serverTimestamp(),
               });
+            } else {
+              final utcNow = DateTime.now().toUtc();
+              final dailyPostDate = '${utcNow.year.toString().padLeft(4, '0')}-'
+                  '${utcNow.month.toString().padLeft(2, '0')}-'
+                  '${utcNow.day.toString().padLeft(2, '0')}';
+              transaction.set(communityStatsReference, {
+                'memberCount': 1,
+                'dailyPostDate': dailyPostDate,
+                'dailyPostCount': 0,
+                'lastMemberUid': user.uid,
+                'lastPostId': '',
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
             }
           });
         } on UsernameAlreadyTakenException {

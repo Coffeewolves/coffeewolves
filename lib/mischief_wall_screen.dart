@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:video_player/video_player.dart';
 
 import 'interstitial_ads_service.dart';
 import 'mischief_wall_service.dart';
@@ -35,7 +36,7 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
   late Stream<QuerySnapshot<Map<String, dynamic>>> _postsStream;
   Timer? _expiryRefreshTimer;
   bool _publishing = false;
-  String _publishingStage = 'GUARDANDO FOTO…';
+  String _publishingStage = 'GUARDANDO EN FIRESTORE…';
   bool _voting = false;
   bool _leaving = false;
   String _feedSort = 'recent';
@@ -86,22 +87,69 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
       });
       return;
     }
-    XFile? image;
+    final mediaType = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _panel,
+        title: const Text(
+          'Elige qué compartir',
+          style: TextStyle(color: _cream),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_outlined, color: _gold),
+              title: const Text('Foto', style: TextStyle(color: _cream)),
+              onTap: () => Navigator.pop(dialogContext, 'image'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam_outlined, color: _gold),
+              title: const Text('Video de hasta 15 segundos'),
+              subtitle: const Text('Máximo 5 MB · MP4, MOV o WebM'),
+              onTap: () => Navigator.pop(dialogContext, 'video'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mediaType == null || !mounted) return;
+    XFile? media;
     try {
-      image = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 100,
-      );
+      media = mediaType == 'video'
+          ? await _picker.pickVideo(
+              source: ImageSource.gallery,
+              maxDuration: const Duration(seconds: 15),
+            )
+          : await _picker.pickImage(
+              source: ImageSource.gallery,
+              imageQuality: 100,
+            );
     } catch (error) {
       if (mounted) {
         setState(() => _error = 'No se pudo abrir la galería: $error');
       }
       return;
     }
-    if (image == null || !mounted) return;
-    Uint8List imageBytes;
+    if (media == null || !mounted) return;
+    Uint8List mediaBytes;
+    var mediaContentType = 'image/jpeg';
     try {
-      imageBytes = compressProfileImageBytes(await image.readAsBytes());
+      final sourceBytes = await media.readAsBytes();
+      if (mediaType == 'image') {
+        mediaBytes = compressProfileImageBytes(sourceBytes);
+      } else {
+        mediaContentType =
+            MischiefWallService.videoContentTypeForFileName(media.name);
+        if (sourceBytes.length > MischiefWallService.maxVideoBytes) {
+          setState(() {
+            _error =
+                'El video supera 5 MB. Elige un clip más corto o comprimido.';
+          });
+          return;
+        }
+        mediaBytes = sourceBytes;
+      }
     } on FormatException catch (error) {
       setState(() => _error = error.message);
       return;
@@ -173,7 +221,9 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
     });
     try {
       await _service.createPost(
-        imageBytes: imageBytes,
+        mediaBytes: mediaBytes,
+        mediaType: mediaType,
+        mediaContentType: mediaContentType,
         dogName: dogNameController.text,
         description: descriptionController.text,
         onProgress: (stage) {
@@ -187,7 +237,7 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
     } on TimeoutException {
       if (!mounted) return;
       setState(() {
-        _error = _publishingStage == 'GUARDANDO PUBLICACIÓN…'
+        _error = _publishingStage == 'GUARDANDO EN FIRESTORE…'
             ? 'La confirmación tardó demasiado. Actualiza el muro antes de '
                 'intentar publicar otra vez.'
             : 'La carga tardó demasiado. Revisa tu conexión e inténtalo '
@@ -214,7 +264,7 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
       if (mounted) {
         setState(() {
           _publishing = false;
-          _publishingStage = 'GUARDANDO FOTO…';
+          _publishingStage = 'GUARDANDO EN FIRESTORE…';
         });
       }
     }
@@ -382,22 +432,30 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
               ],
             ),
           ),
-          AspectRatio(
-            aspectRatio: 4 / 3,
-            child: photoBytes != null
-                ? Image.memory(
-                    photoBytes,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        _brokenPhotoPlaceholder(),
-                  )
-                : Image.network(
-                    post['photoUrl'] as String? ?? '',
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
-                        _brokenPhotoPlaceholder(),
-                  ),
-          ),
+          if (post['mediaType'] == 'video')
+            _MischiefVideoPlayer(
+              service: _service,
+              postId: document.id,
+              contentType: post['mediaContentType'] as String? ?? 'video/mp4',
+              chunkCount: post['videoChunkCount'] as int? ?? 0,
+            )
+          else
+            AspectRatio(
+              aspectRatio: 4 / 3,
+              child: photoBytes != null
+                  ? Image.memory(
+                      photoBytes,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          _brokenPhotoPlaceholder(),
+                    )
+                  : Image.network(
+                      post['photoUrl'] as String? ?? '',
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          _brokenPhotoPlaceholder(),
+                    ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(15, 13, 15, 8),
             child: Text(
@@ -635,8 +693,9 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
                         final posts = [...snapshot.data!.docs];
                         if (_feedSort == 'recent') {
                           posts.sort(
-                            (a, b) => (b.data()['createdAt'] as Timestamp?)
-                                ?.compareTo(
+                            (a, b) =>
+                                (b.data()['createdAt'] as Timestamp?)
+                                    ?.compareTo(
                                   a.data()['createdAt'] as Timestamp? ??
                                       Timestamp(0, 0),
                                 ) ??
@@ -674,6 +733,117 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
                   ),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+class _MischiefVideoPlayer extends StatefulWidget {
+  const _MischiefVideoPlayer({
+    required this.service,
+    required this.postId,
+    required this.contentType,
+    required this.chunkCount,
+  });
+
+  final MischiefWallService service;
+  final String postId;
+  final String contentType;
+  final int chunkCount;
+
+  @override
+  State<_MischiefVideoPlayer> createState() => _MischiefVideoPlayerState();
+}
+
+class _MischiefVideoPlayerState extends State<_MischiefVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _togglePlayback() async {
+    final currentController = _controller;
+    if (currentController != null) {
+      if (currentController.value.isPlaying) {
+        await currentController.pause();
+      } else {
+        await currentController.play();
+      }
+      if (mounted) setState(() {});
+      return;
+    }
+    if (_loading || _error != null) return;
+    setState(() => _loading = true);
+    try {
+      final bytes = await widget.service.getVideoBytes(
+        widget.postId,
+        chunkCount: widget.chunkCount,
+      );
+      final controller = VideoPlayerController.networkUrl(
+        Uri.dataFromBytes(bytes, mimeType: widget.contentType),
+      );
+      _controller = controller;
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.play();
+      if (mounted) setState(() => _loading = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = error.toString();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    final controller = _controller;
+    if (controller != null) unawaited(controller.dispose());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 4 / 3,
+      child: GestureDetector(
+        onTap: _togglePlayback,
+        child: ColoredBox(
+          color: const Color(0xFF302820),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (_controller != null)
+                SizedBox.expand(
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: _controller!.value.size.width,
+                      height: _controller!.value.size.height,
+                      child: VideoPlayer(_controller!),
+                    ),
+                  ),
+                ),
+              if (_loading)
+                const CircularProgressIndicator(
+                  color: Color(0xFFC6A06A),
+                )
+              else if (_error != null)
+                const Icon(
+                  Icons.video_file_outlined,
+                  color: Color(0xFFB7AA9D),
+                  size: 40,
+                )
+              else if (_controller == null || !_controller!.value.isPlaying)
+                const CircleAvatar(
+                  backgroundColor: Color(0x99000000),
+                  foregroundColor: Color(0xFFE9DCCB),
+                  radius: 30,
+                  child: Icon(Icons.play_arrow, size: 42),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
