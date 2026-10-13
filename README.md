@@ -30,39 +30,36 @@ servicio. La app no activa Blaze.
 
 #### Retención de publicaciones del Muro
 
-Las publicaciones nuevas vencen inicialmente a los 7 días. El contador se
-actualiza con cada publicación y registro: al llegar a 5.000 documentos de
-usuarios, las publicaciones nuevas vencen a los 3 días; al llegar a 1.000
-publicaciones durante el día UTC, vence en 24 horas (este límite tiene
-prioridad). La pantalla deja de mostrar publicaciones vencidas y actualiza el
-listado cada minuto.
+Todas las publicaciones vencen exactamente 7 días después de su creación,
+independientemente del tamaño de la comunidad o del volumen diario. Firestore
+Rules limita la fecha de expiración y el feed oculta las publicaciones vencidas.
+Un workflow de GitHub Actions limpia las publicaciones y los fragmentos de
+video cada hora; por la periodicidad del proceso, el borrado puede ocurrir
+hasta una hora después del vencimiento. El script también migra las fechas de
+publicaciones antiguas a creación + 7 días y las borra si ya vencieron.
 
-Para inicializar los contadores, migrar las publicaciones antiguas y limpiar
-las vencidas, instala las dependencias de Functions y autentica Google Cloud
-Application Default Credentials como una persona con acceso al proyecto:
+Para habilitar las tareas automáticas, configura el secreto de repositorio
+`FIREBASE_SERVICE_ACCOUNT_WOLVES_CLUB_FB24A` con una clave JSON de una cuenta de
+servicio del proyecto `wolves-club-fb24a`. La cuenta debe poder leer/escribir
+Firestore; para el despliegue de reglas e índices también necesita permisos de
+administración de Firebase Rules e índices de Firestore. Los workflows
+`cleanup-mischief-posts.yml` y `deploy-firestore.yml` se ejecutan en GitHub
+Actions tras el push; el primero migra las publicaciones existentes y luego
+se repite cada hora. La aplicación web se publica por separado mediante
+`deploy-pages.yml`.
+
+La pantalla deja de mostrar publicaciones vencidas y actualiza el listado cada
+minuto. Para ejecutar una limpieza manual durante el desarrollo:
 
 ```bash
 cd functions
 npm install
-gcloud auth application-default login
-node cleanup_mischief_posts.js --watch --recount-members
-```
-
-La app crea el contador automáticamente al registrar al primer miembro nuevo
-o guardar la primera publicación, así que no hace falta ejecutar el script para
-poder publicar. `--recount-members` vuelve a contar los usuarios existentes
-para que el umbral de 5.000 refleje toda la comunidad actual y no solo miembros
-nuevos desde la activación de este contador. Mantén ese proceso local abierto:
-limpia las publicaciones vencidas cada 6 horas y vuelve a ajustar el total de
-miembros. Para aplicar las reglas e índice nuevos de Firestore:
-
-```bash
-firebase deploy --only firestore:rules,firestore:indexes --project wolves-club-fb24a
+node cleanup_mischief_posts.js --migrate
 ```
 
 Esta estrategia consume cuota de Firestore Spark; las imágenes se convierten a
 Base64 y los videos generan múltiples escrituras y lecturas. El proceso local
-no activa Blaze ni crea un bucket.
+o GitHub Actions no activa Blaze ni crea un bucket.
 
 ## Menú
 
@@ -648,6 +645,51 @@ marcador porque esa página no muestra una foto para esos productos.
 Los postres y tortas publicados en
 [Desserts](https://sites.google.com/view/coffeewolves/menu/desserts) también
 incluyen sus fotografías cuando el producto está disponible en el catálogo.
+
+## HOY NOS FALTA UNO
+
+El espacio comunitario **HOY NOS FALTA UNO** está integrado en la navegación
+de Manada y utiliza Flutter, Firebase Authentication y Cloud Firestore. Las
+cuentas deben tener correo verificado. Las misiones viven en
+`lostPetMissions`, los avistamientos en `lostPetSightings`, los favoritos en
+`lostPetFavorites`, las solicitudes privadas de contacto en
+`lostPetContactRequests` y las denuncias en `lostPetReports`.
+
+Las publicaciones públicas no guardan correo ni teléfono. La información de
+collar/placa y la historia no autorizada del reencuentro se guardan en
+`lostPetMissions/{missionId}/private/details`, legible solo por la persona
+responsable. Las fotos de una misión se optimizan a JPEG (máximo 200 KB cada
+una, hasta tres) y se guardan en documentos separados bajo
+`lostPetMissions/{missionId}/photos`; los reportes de avistamiento pueden
+incluir una foto optimizada directamente en su documento. Esta opción evita
+Firebase Storage y el plan Blaze, pero las imágenes siguen consumiendo cuota de
+Firestore y deben considerarse al crecer el volumen.
+
+Los estados disponibles son `active`, `sightings`, `verifying`, `reunited` y
+`closed`. Una historia de reencuentro solo se muestra en **VOLVIÓ A CASA**
+cuando la persona responsable marca expresamente su autorización. Las pistas
+se etiquetan como no verificadas; las sugerencias de relación no confirman que
+sea el mismo animal. Los reportes de publicaciones solo son legibles por
+Gerencia en Firestore; no hay todavía una bandeja administrativa dentro de la
+app. Los mensajes privados se consultan en **MIS MENSAJES** o en la ficha de la
+misión; no hay un proveedor de notificaciones push configurado, por lo que no
+se envían avisos fuera de la app.
+
+Los enlaces compartidos abren la misión directamente en la versión web de
+GitHub Pages mediante `?module=lost-pet&mission={id}` después de iniciar sesión.
+En plataformas móviles, WhatsApp comparte el resumen y el identificador, pero
+no se ha configurado un enlace universal/app link. Publica las reglas nuevas
+antes de habilitar el módulo:
+
+```sh
+firebase deploy --only firestore:rules
+```
+
+No se necesita índice compuesto adicional para los filtros iniciales. Las
+consultas de feed están limitadas a 50 documentos; para crecer, deberá añadirse
+paginación y una política de retención aprobada. Este espacio facilita
+información comunitaria: no es un servicio de rescate ni garantiza recuperar
+mascotas.
 Las bebidas de [Presurizados y Destilados](https://sites.google.com/view/coffeewolves/menu/presurizados-y-destilados)
 incluyen sus fotos y descripciones publicadas. Las cartas que solo están
 disponibles como láminas no se reutilizan como fotografías; el resto de las

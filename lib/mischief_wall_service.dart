@@ -129,9 +129,8 @@ class MischiefWallService {
               'Pide a gerencia que los revise.';
         }
         final dailyPostCount = priorPostsToday + 1;
-        final retention = mischiefPostLifetime(
-          memberCount: memberCount,
-          postsToday: dailyPostCount,
+        final expiration = Timestamp.fromDate(
+          now.add(mischiefPostLifetime()),
         );
 
         final postData = <String, dynamic>{
@@ -142,7 +141,7 @@ class MischiefWallService {
           'description': description.trim(),
           'mediaType': mediaType,
           'mediaContentType': mediaContentType,
-          'fecha_Expiracion': Timestamp.fromDate(now.add(retention)),
+          'fecha_Expiracion': expiration,
           'innocentVotes': 0,
           'guiltyVotes': 0,
           'createdAt': FieldValue.serverTimestamp(),
@@ -264,11 +263,4 @@ class MischiefWallService {
   }
 }
 
-Duration mischiefPostLifetime({
-  required int memberCount,
-  required int postsToday,
-}) {
-  if (postsToday >= 1000) return const Duration(days: 1);
-  if (memberCount >= 5000) return const Duration(days: 3);
-  return const Duration(days: 7);
-}
+Duration mischiefPostLifetime() => const Duration(days: 7);

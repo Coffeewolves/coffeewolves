@@ -21,6 +21,7 @@ import 'background_music_stub.dart'
 import 'firebase_options.dart';
 import 'business_operations_service.dart';
 import 'chat_credit_service.dart';
+import 'lost_pet_screen.dart';
 import 'mischief_wall_screen.dart';
 import 'pack_legacy_screen.dart';
 import 'pet_profiles_screen.dart';
@@ -4594,6 +4595,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   // ----------------------------------------------------------
 
   String page = 'splash';
+  bool _sharedLostPetMissionOpened = false;
   String previousPage = 'home';
   final List<String> _pageHistory = [];
   String _menuReturnPage = 'home';
@@ -5164,6 +5166,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     if (_pageHistory.length > 50) _pageHistory.removeAt(0);
   }
 
+  String? get _sharedLostPetMissionId {
+    if (!kIsWeb || _sharedLostPetMissionOpened) return null;
+    final parameters = Uri.base.queryParameters;
+    final missionId = parameters['mission']?.trim();
+    if (parameters['module'] != 'lost-pet' ||
+        missionId == null ||
+        !RegExp(r'^[A-Za-z0-9_-]{20,80}$').hasMatch(missionId)) {
+      return null;
+    }
+    return missionId;
+  }
+
   void _closeSideMenu() {
     final destination = _menuReturnPage == 'menu' ? 'home' : _menuReturnPage;
     if (destination == page) return;
@@ -5285,10 +5299,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           page = 'admin';
         }
         if (authorizedRole == 'user' &&
-            page != 'splash' &&
-            page != 'plushAuthenticity') {
+            page != 'plushAuthenticity' &&
+            (page != 'splash' || _sharedLostPetMissionId != null)) {
           _pageHistory.clear();
-          page = 'home';
+          page = _sharedLostPetMissionId == null ? 'home' : 'lostPet';
         }
       });
       if (authorizedRole == 'user') {
@@ -6306,7 +6320,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         _prepareAdminSession(demoMode: _debugRoleBypassActive);
         page = 'admin';
       } else {
-        page = 'home';
+        page = _sharedLostPetMissionId == null ? 'home' : 'lostPet';
       }
     });
     if (_userRole == 'admin') _resetAdminFinanceTimeout();
@@ -11421,7 +11435,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               child: Column(
                 children: [
                   Expanded(
-                    child: page == 'mischiefWall'
+                    child: page == 'mischiefWall' || page == 'lostPet'
                         ? _screen()
                         : SingleChildScrollView(child: _screen()),
                   ),
@@ -11925,6 +11939,14 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
       case 'mischiefWall':
         return MischiefWallScreen(onClose: back);
+
+      case 'lostPet':
+        return LostPetScreen(
+          onBack: back,
+          initialMissionId: _sharedLostPetMissionId,
+          onSharedMissionConsumed: () =>
+              _sharedLostPetMissionOpened = true,
+        );
 
       case 'legacy':
         return PackLegacyScreen(onBack: back);
@@ -23067,6 +23089,44 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 'Conoce a quienes llenan de alegría, cariño y patitas nuestro refugio.',
                 style: TextStyle(color: muted, height: 1.5),
               ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: card,
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: gold.withValues(alpha: 0.28)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'HOY NOS FALTA UNO',
+                      style: TextStyle(
+                        color: gold,
+                        letterSpacing: 1,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Ningún miembro de la Manada debería buscar solo.',
+                      style: TextStyle(color: cream, height: 1.4),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: () => go('lostPet'),
+                      icon: const Icon(Icons.pets_outlined),
+                      label: const Text('ABRIR ESPACIO DE REENCUENTRO'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: gold,
+                        side: BorderSide(color: gold.withValues(alpha: 0.55)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 20),
               Center(
                 child: ConstrainedBox(
@@ -29628,6 +29688,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           _profileOption(Icons.groups_outlined, 'Manada', () => go('pack')),
           _profileOption(
             Icons.pets_outlined,
+            'Hoy nos falta uno',
+            () => go('lostPet'),
+          ),
+          _profileOption(
+            Icons.pets_outlined,
             'Wolves Match - Lanza tu aullido',
             _startMatch,
           ),
@@ -29676,7 +29741,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   Widget _bottomBar() {
     final destinations = ['home', 'pack', 'experience', 'shop', 'profile'];
     var selectedIndex = 0;
-    if (page == 'pack' || page.startsWith('match') || page == 'mischiefWall') {
+    if (page == 'pack' ||
+        page.startsWith('match') ||
+        page == 'mischiefWall' ||
+        page == 'lostPet') {
       selectedIndex = 1;
     } else if (page == 'experience' ||
         page == 'passport' ||

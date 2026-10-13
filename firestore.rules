@@ -108,6 +108,151 @@ service cloud.firestore {
         );
     }
 
+    function isVerifiedLostPetMember() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.auth.token.email_verified == true;
+    }
+
+    function hasNoPublicContactInfo(value) {
+      return value is string
+        && !value.matches('.*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}.*')
+        && !value.matches('.*[0-9][0-9 ()+.-]{7,}[0-9].*')
+        && !value.matches('.*-?[0-9]{1,3}[.][0-9]{3,}[ ]*,[ ]*-?[0-9]{1,3}[.][0-9]{3,}.*');
+    }
+
+    function validLostPetMission(data) {
+      return data.keys().hasOnly([
+          'ownerUid', 'petName', 'species', 'breed', 'size', 'color', 'sex',
+          'markings', 'missingAt', 'city', 'area', 'lastSeenArea',
+          'description', 'photoCount', 'status',
+          'sightingsCount', 'reunionStory', 'shareReunion',
+          'publicationAuthorized', 'informationIsAccurate', 'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'ownerUid', 'petName', 'species', 'breed', 'size', 'color', 'sex',
+          'markings', 'missingAt', 'city', 'area', 'lastSeenArea',
+          'description', 'photoCount', 'status',
+          'sightingsCount', 'reunionStory', 'shareReunion',
+          'publicationAuthorized', 'informationIsAccurate', 'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerUid == request.auth.uid
+        && data.petName is string
+        && data.petName.size() <= 60
+        && hasNoPublicContactInfo(data.petName)
+        && data.species in ['dog', 'cat', 'other']
+        && data.breed is string
+        && data.breed.size() <= 80
+        && hasNoPublicContactInfo(data.breed)
+        && data.size in ['unknown', 'small', 'medium', 'large']
+        && data.color is string
+        && data.color.size() > 0
+        && data.color.size() <= 80
+        && hasNoPublicContactInfo(data.color)
+        && data.sex in ['unknown', 'female', 'male']
+        && data.markings is string
+        && data.markings.size() <= 400
+        && hasNoPublicContactInfo(data.markings)
+        && data.missingAt is timestamp
+        && data.missingAt <= request.time + duration.value(1, 'd')
+        && data.city is string
+        && data.city.size() > 0
+        && data.city.size() <= 80
+        && hasNoPublicContactInfo(data.city)
+        && data.area is string
+        && data.area.size() > 0
+        && data.area.size() <= 100
+        && hasNoPublicContactInfo(data.area)
+        && data.lastSeenArea is string
+        && data.lastSeenArea.size() > 0
+        && data.lastSeenArea.size() <= 150
+        && hasNoPublicContactInfo(data.lastSeenArea)
+        && data.description is string
+        && data.description.size() > 0
+        && data.description.size() <= 800
+        && hasNoPublicContactInfo(data.description)
+        && data.photoCount is int
+        && data.photoCount >= 1
+        && data.photoCount <= 3
+        && data.status in [
+          'active', 'sightings', 'verifying', 'reunited', 'closed'
+        ]
+        && data.sightingsCount is int
+        && data.sightingsCount >= 0
+        && data.reunionStory is string
+        && data.reunionStory.size() <= 400
+        && data.shareReunion is bool
+        && (
+          data.shareReunion == false
+          && data.reunionStory == ''
+          || data.shareReunion == true
+          && data.status == 'reunited'
+        )
+        && data.publicationAuthorized == true
+        && data.informationIsAccurate == true
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function validLostPetSighting(data) {
+      return data.keys().hasOnly([
+          'missionId', 'description', 'species', 'color',
+          'size', 'sightedAt', 'city', 'area', 'direction', 'additionalInfo',
+          'photoBase64', 'verificationStatus', 'createdAt'
+        ])
+        && data.keys().hasAll([
+          'missionId', 'description', 'species', 'color',
+          'size', 'sightedAt', 'city', 'area', 'direction', 'additionalInfo',
+          'photoBase64', 'verificationStatus', 'createdAt'
+        ])
+        && data.missionId is string
+        && data.missionId.size() <= 80
+        && data.description is string
+        && data.description.size() > 0
+        && data.description.size() <= 600
+        && hasNoPublicContactInfo(data.description)
+        && data.species in ['dog', 'cat', 'other']
+        && data.color is string
+        && data.color.size() <= 300
+        && hasNoPublicContactInfo(data.color)
+        && data.size in ['unknown', 'small', 'medium', 'large']
+        && data.sightedAt is timestamp
+        && data.sightedAt <= request.time + duration.value(1, 'd')
+        && data.city is string
+        && data.city.size() > 0
+        && data.city.size() <= 80
+        && hasNoPublicContactInfo(data.city)
+        && data.area is string
+        && data.area.size() > 0
+        && data.area.size() <= 100
+        && hasNoPublicContactInfo(data.area)
+        && data.direction is string
+        && data.direction.size() <= 200
+        && hasNoPublicContactInfo(data.direction)
+        && data.additionalInfo is string
+        && data.additionalInfo.size() <= 400
+        && hasNoPublicContactInfo(data.additionalInfo)
+        && data.photoBase64 is string
+        && (
+          data.photoBase64.size() == 0
+          || data.photoBase64.size() >= 4
+            && data.photoBase64.size() <= 273100
+        )
+        && data.verificationStatus == 'unverified'
+        && data.createdAt is timestamp
+        && (
+          data.missionId == ''
+          || exists(
+            /databases/$(database)/documents/lostPetMissions/$(data.missionId)
+          )
+          && get(
+            /databases/$(database)/documents/lostPetMissions/$(data.missionId)
+          ).data.status in ['active', 'sightings', 'verifying']
+        );
+    }
+
     function walletPath(userId) {
       return /databases/$(database)/documents/wallets/$(userId);
     }
@@ -954,42 +1099,12 @@ service cloud.firestore {
           )
         )
         && request.resource.data.fecha_Expiracion is timestamp
-        && request.resource.data.fecha_Expiracion > request.time
-        && getAfter(
-          /databases/$(database)/documents/communityStats/mischiefWall
-        ).data.lastPostId == postId
-        && getAfter(
-          /databases/$(database)/documents/communityStats/mischiefWall
-        ).data.dailyPostCount is int
-        && getAfter(
-          /databases/$(database)/documents/communityStats/mischiefWall
-        ).data.memberCount is int
-        && (
-          getAfter(
-            /databases/$(database)/documents/communityStats/mischiefWall
-          ).data.dailyPostCount >= 1000
-          && request.resource.data.fecha_Expiracion
-            <= request.time + duration.value(1, 'd')
-              + duration.value(1, 'm')
-          || getAfter(
-            /databases/$(database)/documents/communityStats/mischiefWall
-          ).data.dailyPostCount < 1000
-          && getAfter(
-            /databases/$(database)/documents/communityStats/mischiefWall
-          ).data.memberCount >= 5000
-          && request.resource.data.fecha_Expiracion
-            <= request.time + duration.value(3, 'd')
-              + duration.value(1, 'm')
-          || getAfter(
-            /databases/$(database)/documents/communityStats/mischiefWall
-          ).data.dailyPostCount < 1000
-          && getAfter(
-            /databases/$(database)/documents/communityStats/mischiefWall
-          ).data.memberCount < 5000
-          && request.resource.data.fecha_Expiracion
-            <= request.time + duration.value(7, 'd')
-              + duration.value(1, 'm')
-        )
+        && request.resource.data.fecha_Expiracion
+          > request.time + duration.value(6, 'd')
+            + duration.value(23, 'h')
+        && request.resource.data.fecha_Expiracion
+          <= request.time + duration.value(7, 'd')
+            + duration.value(1, 'm')
         && request.resource.data.innocentVotes == 0
         && request.resource.data.guiltyVotes == 0
         && request.resource.data.createdAt == request.time;
@@ -1115,6 +1230,205 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && request.auth.uid == userId
         && request.auth.token.email_verified == true;
+    }
+
+    match /lostPetMissions/{missionId} {
+      allow get, list: if isVerifiedLostPetMember();
+      allow create: if isVerifiedLostPetMember()
+        && validLostPetMission(request.resource.data)
+        && request.resource.data.status == 'active'
+        && request.resource.data.photoCount >= 1
+        && request.resource.data.sightingsCount == 0
+        && request.resource.data.reunionStory == ''
+        && request.resource.data.shareReunion == false
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isVerifiedLostPetMember()
+        && resource.data.ownerUid == request.auth.uid
+        && validLostPetMission(request.resource.data)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.sightingsCount == resource.data.sightingsCount
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'petName', 'species', 'breed', 'size', 'color', 'sex', 'markings',
+          'missingAt', 'city', 'area', 'lastSeenArea', 'description',
+          'photoCount', 'status', 'reunionStory',
+          'shareReunion', 'publicationAuthorized', 'informationIsAccurate',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+
+      match /private/{detailId} {
+        allow get: if detailId == 'details'
+          && isVerifiedLostPetMember()
+          && get(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+        allow list: if false;
+        allow create: if detailId == 'details'
+          && isVerifiedLostPetMember()
+          && request.resource.data.keys().hasOnly([
+            'identification', 'reunionStory', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'identification', 'reunionStory', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.identification is string
+          && request.resource.data.identification.size() <= 250
+          && request.resource.data.reunionStory is string
+          && request.resource.data.reunionStory.size() <= 400
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+        allow update: if detailId == 'details'
+          && isVerifiedLostPetMember()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'identification', 'reunionStory', 'updatedAt'
+          ])
+          && request.resource.data.identification is string
+          && request.resource.data.identification.size() <= 250
+          && request.resource.data.reunionStory is string
+          && request.resource.data.reunionStory.size() <= 400
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time
+          && get(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+        allow delete: if false;
+      }
+
+      match /photos/{photoId} {
+        allow get, list: if isVerifiedLostPetMember();
+        allow create, update: if isVerifiedLostPetMember()
+          && photoId in ['0', '1', '2']
+          && request.resource.data.keys().hasOnly(['index', 'dataBase64'])
+          && request.resource.data.index is int
+          && request.resource.data.index >= 0
+          && request.resource.data.index < 3
+          && request.resource.data.index < getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.photoCount
+          && (
+            photoId == '0' && request.resource.data.index == 0
+            || photoId == '1' && request.resource.data.index == 1
+            || photoId == '2' && request.resource.data.index == 2
+          )
+          && request.resource.data.dataBase64 is string
+          && request.resource.data.dataBase64.size() >= 4
+          && request.resource.data.dataBase64.size() <= 273100
+          && getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+        allow delete: if isVerifiedLostPetMember()
+          && resource.data.index is int
+          && resource.data.index >= getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.photoCount
+          && getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+      }
+    }
+
+    match /lostPetSightings/{sightingId} {
+      allow get, list: if isVerifiedLostPetMember();
+      allow create: if isVerifiedLostPetMember()
+        && validLostPetSighting(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /lostPetContactRequests/{requestId} {
+      function requestMissionPath() {
+        return /databases/$(database)/documents/lostPetMissions/$(resource.data.missionId);
+      }
+
+      allow get, list: if isVerifiedLostPetMember()
+        && (
+          resource.data.senderUid == request.auth.uid
+          || exists(requestMissionPath())
+            && get(requestMissionPath()).data.ownerUid == request.auth.uid
+        );
+      allow create: if isVerifiedLostPetMember()
+        && request.resource.data.keys().hasOnly([
+          'missionId', 'senderUid', 'senderName', 'message', 'status',
+          'ownerReply', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'missionId', 'senderUid', 'senderName', 'message', 'status',
+          'ownerReply', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.senderName is string
+        && request.resource.data.senderName.size() <= 80
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 500
+        && request.resource.data.status == 'new'
+        && request.resource.data.ownerReply == ''
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && exists(
+          /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
+        )
+        && get(
+          /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
+        ).data.ownerUid != request.auth.uid;
+      allow update: if isVerifiedLostPetMember()
+        && exists(requestMissionPath())
+        && get(requestMissionPath()).data.ownerUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownerReply', 'status', 'updatedAt'
+        ])
+        && request.resource.data.ownerReply is string
+        && request.resource.data.ownerReply.size() > 0
+        && request.resource.data.ownerReply.size() <= 500
+        && request.resource.data.status == 'replied'
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /lostPetFavorites/{favoriteId} {
+      allow get, list: if isVerifiedLostPetMember()
+        && resource.data.userUid == request.auth.uid;
+      allow create: if isVerifiedLostPetMember()
+        && request.resource.data.keys().hasOnly([
+          'userUid', 'missionId', 'createdAt'
+        ])
+        && request.resource.data.userUid == request.auth.uid
+        && request.resource.data.missionId is string
+        && request.resource.data.createdAt == request.time
+        && exists(
+          /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
+        );
+      allow update: if false;
+      allow delete: if isVerifiedLostPetMember()
+        && resource.data.userUid == request.auth.uid;
+    }
+
+    match /lostPetReports/{reportId} {
+      allow get, list: if isAdmin();
+      allow create: if isVerifiedLostPetMember()
+        && request.resource.data.keys().hasOnly([
+          'missionId', 'reporterUid', 'reason', 'details', 'createdAt'
+        ])
+        && request.resource.data.missionId is string
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.reason in [
+          'sospechoso', 'falso', 'abuso', 'privacidad'
+        ]
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 300
+        && request.resource.data.createdAt == request.time
+        && reportId == request.resource.data.missionId + '_'
+          + request.auth.uid
+        && exists(
+          /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
+        );
+      allow update, delete: if false;
     }
 
     match /users/{userId} {
