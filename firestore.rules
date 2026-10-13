@@ -970,6 +970,7 @@ service cloud.firestore {
           ).data.dailyPostCount >= 1000
           && request.resource.data.fecha_Expiracion
             <= request.time + duration.value(1, 'd')
+              + duration.value(1, 'm')
           || getAfter(
             /databases/$(database)/documents/communityStats/mischiefWall
           ).data.dailyPostCount < 1000
@@ -978,6 +979,7 @@ service cloud.firestore {
           ).data.memberCount >= 5000
           && request.resource.data.fecha_Expiracion
             <= request.time + duration.value(3, 'd')
+              + duration.value(1, 'm')
           || getAfter(
             /databases/$(database)/documents/communityStats/mischiefWall
           ).data.dailyPostCount < 1000
@@ -986,6 +988,7 @@ service cloud.firestore {
           ).data.memberCount < 5000
           && request.resource.data.fecha_Expiracion
             <= request.time + duration.value(7, 'd')
+              + duration.value(1, 'm')
         )
         && request.resource.data.innocentVotes == 0
         && request.resource.data.guiltyVotes == 0

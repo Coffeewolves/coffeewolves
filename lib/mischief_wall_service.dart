@@ -94,6 +94,7 @@ class MischiefWallService {
         description.trim().length > 300) {
       throw ArgumentError('Completa los datos de la publicación.');
     }
+    await user.getIdToken(true);
     final post = _posts.doc();
     try {
       onProgress?.call('PREPARANDO PUBLICACIÓN…');
@@ -103,17 +104,20 @@ class MischiefWallService {
       final now = DateTime.now().toUtc();
       final today = _utcDateKey(now);
       onProgress?.call('GUARDANDO EN FIRESTORE…');
-      await _firestore.runTransaction<void>((transaction) async {
+      final validationError =
+          await _firestore.runTransaction<String?>((transaction) async {
         final statsSnapshot = await transaction.get(_communityStats);
         final stats = statsSnapshot.data() ?? const <String, dynamic>{};
         final storedMemberCount = stats['memberCount'];
         if (statsSnapshot.exists && storedMemberCount is! int) {
-          throw StateError('El contador de miembros no es válido.');
+          return 'El contador de miembros del Muro no es válido. '
+              'Pide a gerencia que lo revise.';
         }
         final memberCount = statsSnapshot.exists ? storedMemberCount as int : 1;
         final storedDailyPostCount = stats['dailyPostCount'];
         if (statsSnapshot.exists && storedDailyPostCount is! int) {
-          throw StateError('El contador diario de publicaciones no es válido.');
+          return 'El contador diario del Muro no es válido. '
+              'Pide a gerencia que lo revise.';
         }
         final priorPostsToday = stats['dailyPostDate'] == today
             ? statsSnapshot.exists
@@ -121,7 +125,8 @@ class MischiefWallService {
                 : 0
             : 0;
         if (memberCount < 0 || priorPostsToday < 0) {
-          throw StateError('Los contadores del Muro no son válidos.');
+          return 'Los contadores del Muro no son válidos. '
+              'Pide a gerencia que los revise.';
         }
         final dailyPostCount = priorPostsToday + 1;
         final retention = mischiefPostLifetime(
@@ -181,7 +186,11 @@ class MischiefWallService {
             'updatedAt': FieldValue.serverTimestamp(),
           });
         }
+        return null;
       }).timeout(const Duration(seconds: 30));
+      if (validationError != null) {
+        throw StateError(validationError);
+      }
     } catch (error, stackTrace) {
       debugPrint('No se pudo publicar en el muro: $error');
       debugPrintStack(stackTrace: stackTrace);
