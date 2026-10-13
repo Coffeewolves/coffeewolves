@@ -870,7 +870,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
         return 'No hay conexión. Revisa tu internet e inténtalo otra vez.';
       case 'unauthorized-domain':
         return 'Este dominio no está autorizado en Firebase Authentication. '
-            'Agrega localhost y el dominio de tu app en Authentication > '
+            'Agrega el dominio publicado de tu app en Authentication > '
             'Configuración > Dominios autorizados.';
       case 'invalid-api-key':
         return 'La configuración de Firebase no es válida. Revisa el apiKey '

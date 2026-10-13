@@ -10,6 +10,20 @@ flutter pub get
 flutter run -d chrome
 ```
 
+### Firebase Cloud
+
+La aplicación inicializa Firebase con `DefaultFirebaseOptions.currentPlatform`
+en `lib/main.dart`; las opciones web de `lib/firebase_options.dart` apuntan al
+proyecto `wolves-club-fb24a`. El registro y el inicio de sesión por correo
+utilizan Firebase Authentication en la nube. En Firebase Console, verifica que
+esté habilitado el proveedor **Correo electrónico/contraseña** en
+Authentication > Proveedores de acceso y que el dominio publicado figure en
+Authentication > Configuración > Dominios autorizados.
+
+El plan Spark permite Firebase Authentication y Firestore. La carga de fotos
+que depende de Firebase Storage requiere que Storage esté disponible en el
+proyecto; esta app no crea un bucket ni activa Blaze automáticamente.
+
 ## Menú
 
 El catálogo se basa en las cartas publicadas en [Google Sites](https://sites.google.com/view/coffeewolves/menu)

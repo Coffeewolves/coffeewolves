@@ -10,14 +10,6 @@ For more information, see [Flutter for Firebase installation documentation](http
 ## Data Connect instance
 Each connector creates a static class, with an instance of the `DataConnect` class that can be used to connect to your Data Connect backend and call operations.
 
-### Connecting to the emulator
-
-```dart
-String host = 'localhost'; // or your host name
-int port = 9399; // or your port number
-ExampleConnector.instance.dataConnect.useDataConnectEmulator(host, port);
-```
-
 You can also call queries and mutations by using the connector class.
 ## Queries
 
@@ -108,4 +100,3 @@ final ref = ExampleConnector.instance.createUserProfile(
 ).ref();
 ref.execute();
 ```
-
