@@ -28060,39 +28060,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       );
       return;
     }
-    User? refreshedUser;
-    try {
-      await initialUser.reload();
-      refreshedUser = FirebaseAuth.instance.currentUser;
-      if (refreshedUser == null || refreshedUser.uid != initialUser.uid) {
-        _showSnackBar('La sesión terminó. Inicia sesión nuevamente.');
-        return;
-      }
-      await refreshedUser.getIdToken(true);
-    } on FirebaseAuthException catch (error, stackTrace) {
-      debugPrint(
-        'No se pudo actualizar la sesión antes de abrir soporte: '
-        '${error.code}.',
-      );
-      debugPrintStack(stackTrace: stackTrace);
-      _showSnackBar(
-        'No se pudo comprobar tu sesión (${error.code}). Inténtalo de nuevo.',
-      );
-      return;
-    }
-    if (refreshedUser.email == null) {
-      _showSnackBar(
-        'Agrega un correo electrónico a tu cuenta para enviar un caso.',
-      );
-      return;
-    }
-    if (!refreshedUser.emailVerified) {
-      _showSnackBar(
-        'Verifica tu correo antes de enviar un mensaje a soporte.',
-      );
-      return;
-    }
-    final user = refreshedUser;
+    final user = initialUser;
     final detailsController = TextEditingController();
     final subjectController = TextEditingController();
     final orderController = TextEditingController();
@@ -28172,6 +28140,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     textAlign: TextAlign.center,
                     style: TextStyle(color: muted, fontSize: 10, height: 1.4),
                   ),
+                  if (!user.emailVerified) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Puedes completar el formulario. Para enviarlo, primero verifica el correo de tu cuenta.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFFFFCC80),
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     value: selectedSupportCategory,
