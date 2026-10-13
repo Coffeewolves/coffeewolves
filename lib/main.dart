@@ -28180,14 +28180,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }
 
   Future<void> _showCustomerComplaintForm() async {
-    final initialUser = FirebaseAuth.instance.currentUser;
-    if (initialUser == null) {
-      _showSnackBar(
-        'Inicia sesión con una cuenta de correo para enviar tu caso.',
-      );
-      return;
-    }
-    final user = initialUser;
+    final user = FirebaseAuth.instance.currentUser ?? _firebaseUser;
     final detailsController = TextEditingController();
     final subjectController = TextEditingController();
     final orderController = TextEditingController();
@@ -28249,7 +28242,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 children: [
                   OutlinedButton.icon(
                     key: const ValueKey('customer-support-history'),
-                    onPressed: isSubmitting
+                    onPressed: isSubmitting || user == null
                         ? null
                         : () => unawaited(
                               _showMyCustomerComplaintHistory(user.uid),
@@ -28267,10 +28260,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     textAlign: TextAlign.center,
                     style: TextStyle(color: muted, fontSize: 10, height: 1.4),
                   ),
-                  if (!user.emailVerified) ...[
+                  if (user?.emailVerified != true) ...[
                     const SizedBox(height: 8),
-                    const Text(
-                      'Puedes completar el formulario. Para enviarlo, primero verifica el correo de tu cuenta.',
+                    Text(
+                      user == null
+                          ? 'Puedes completar el formulario. Para enviarlo, inicia sesión y verifica el correo de tu cuenta.'
+                          : 'Puedes completar el formulario. Para enviarlo, primero verifica el correo de tu cuenta.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Color(0xFFFFCC80),
@@ -28332,7 +28327,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       prefixIcon: Icon(Icons.badge_outlined),
                     ),
                     child: SelectableText(
-                      user.uid,
+                      user?.uid ?? 'Inicia sesión para identificar tu caso',
                       style: const TextStyle(color: muted, fontSize: 12),
                     ),
                   ),
@@ -28519,16 +28514,16 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         try {
                           final activeUser = FirebaseAuth.instance.currentUser;
                           if (activeUser == null ||
-                              activeUser.uid != user.uid) {
+                              (user != null && activeUser.uid != user.uid)) {
                             throw StateError(
-                              'La sesión terminó. Inicia sesión nuevamente.',
+                              'Inicia sesión con una cuenta de correo para enviar tu caso.',
                             );
                           }
                           await activeUser.reload();
                           final verifiedUser =
                               FirebaseAuth.instance.currentUser;
                           if (verifiedUser == null ||
-                              verifiedUser.uid != user.uid) {
+                              (user != null && verifiedUser.uid != user.uid)) {
                             throw StateError(
                               'La sesión terminó. Inicia sesión nuevamente.',
                             );
@@ -28575,13 +28570,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                           debugPrintStack(stackTrace: stackTrace);
                           setDialogState(() {
                             isSubmitting = false;
-                            errorMessage =
-                                error.code == 'permission-denied'
-                                    ? 'Firestore rechazó el envío. Verifica tu '
-                                        'correo e inténtalo de nuevo; si persiste, '
-                                        'contacta a soporte.'
-                                    : 'No se pudo enviar el caso '
-                                        '(${error.code}).';
+                            errorMessage = error.code == 'permission-denied'
+                                ? 'Firestore rechazó el envío. Verifica tu '
+                                    'correo e inténtalo de nuevo; si persiste, '
+                                    'contacta a soporte.'
+                                : 'No se pudo enviar el caso '
+                                    '(${error.code}).';
                           });
                         } catch (error, stackTrace) {
                           debugPrint('No se pudo enviar el mensaje: $error');
