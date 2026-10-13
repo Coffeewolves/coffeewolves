@@ -1022,6 +1022,9 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: profileStream,
       builder: (context, snapshot) {
+        if (snapshot.hasData && !snapshot.data!.exists) {
+          return _MissingCustomerProfileForm(user: user);
+        }
         final profile = snapshot.data?.data();
         final storedUsername = (profile?['username'] as String?)?.trim();
         final username = storedUsername?.isNotEmpty == true
@@ -1735,6 +1738,323 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
           fontSize: 11,
           height: 1.4,
         ),
+      ),
+    );
+  }
+}
+
+class _MissingCustomerProfileForm extends StatefulWidget {
+  const _MissingCustomerProfileForm({required this.user});
+
+  final User user;
+
+  @override
+  State<_MissingCustomerProfileForm> createState() =>
+      _MissingCustomerProfileFormState();
+}
+
+class _MissingCustomerProfileFormState
+    extends State<_MissingCustomerProfileForm> {
+  static const _gold = Color(0xFFC6A06A);
+  static const _cream = Color(0xFFE9DCCB);
+  static const _muted = Color(0xFFB7AA9D);
+  static const _panel = Color(0xFF211D19);
+
+  final _formKey = GlobalKey<FormState>();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  String _phoneCountryCode = '+591';
+  String _phoneCountryIsoCode = 'BO';
+  DateTime? _birthDate;
+  bool _saving = false;
+  String? _error;
+
+  bool get _isAdult {
+    final birthDate = _birthDate;
+    if (birthDate == null) return false;
+    final today = DateTime.now();
+    var age = today.year - birthDate.year;
+    if (today.month < birthDate.month ||
+        (today.month == birthDate.month && today.day < birthDate.day)) {
+      age--;
+    }
+    return age >= 18;
+  }
+
+  String get _normalizedPhone =>
+      _phoneController.text.replaceAll(RegExp(r'\D'), '');
+
+  bool get _isPhoneValid {
+    final digits = '$_phoneCountryCode$_normalizedPhone';
+    return _normalizedPhone.length >= 7 &&
+        RegExp(r'^\+[1-9][0-9]{6,14}$').hasMatch(digits);
+  }
+
+  Future<void> _pickBirthDate() async {
+    final today = DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: DateTime(today.year - 18, today.month, today.day),
+      firstDate: DateTime(1900),
+      lastDate: DateTime(today.year - 18, today.month, today.day),
+      helpText: 'SELECCIONA TU FECHA DE NACIMIENTO',
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: _gold,
+            onPrimary: Color(0xFF171411),
+            surface: _panel,
+            onSurface: _cream,
+          ),
+          dialogTheme: const DialogThemeData(backgroundColor: _panel),
+        ),
+        child: child!,
+      ),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _birthDate = selected;
+      _error = null;
+    });
+  }
+
+  Future<void> _save() async {
+    if (_saving || !(_formKey.currentState?.validate() ?? false)) return;
+    final birthDate = _birthDate;
+    if (birthDate == null || !_isAdult) {
+      setState(() =>
+          _error = 'WOLVES MATCH está disponible para mayores de 18 años.');
+      return;
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || user.uid != widget.user.uid) {
+      setState(() => _error = 'La sesión terminó. Inicia sesión nuevamente.');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await user.reload();
+      final verifiedUser = FirebaseAuth.instance.currentUser;
+      if (verifiedUser == null || verifiedUser.uid != user.uid) {
+        throw StateError('La sesión terminó. Inicia sesión nuevamente.');
+      }
+      if (!verifiedUser.emailVerified || verifiedUser.email == null) {
+        throw StateError('Verifica tu correo para completar el perfil.');
+      }
+      await verifiedUser.getIdToken(true);
+
+      final firstName = _firstNameController.text.trim();
+      final lastName = _lastNameController.text.trim();
+      final username = _usernameController.text.trim();
+      final firestore = FirebaseFirestore.instance;
+      final userReference = firestore.collection('users').doc(verifiedUser.uid);
+      await firestore.runTransaction<void>((transaction) async {
+        final current = await transaction.get(userReference);
+        if (current.exists) {
+          throw StateError(
+            'Tu perfil ya existe. Recarga la pantalla para continuar.',
+          );
+        }
+        await UsernameRegistryService.reserveInTransaction(
+          transaction: transaction,
+          firestore: firestore,
+          uid: verifiedUser.uid,
+          username: username,
+          role: 'user',
+        );
+        transaction.set(userReference, {
+          'email': verifiedUser.email,
+          'displayName': '$firstName $lastName',
+          'firstName': firstName,
+          'lastName': lastName,
+          'username': username,
+          'role': 'user',
+          'birthDate': '${birthDate.year.toString().padLeft(4, '0')}-'
+              '${birthDate.month.toString().padLeft(2, '0')}-'
+              '${birthDate.day.toString().padLeft(2, '0')}',
+          'phoneNumber': '$_phoneCountryCode$_normalizedPhone',
+          'phoneCountryCode': _phoneCountryCode,
+          'phoneCountryIsoCode': _phoneCountryIsoCode,
+          'phoneNationalNumber': _normalizedPhone,
+          'phoneVerified': false,
+          'birthdayMarketingConsent': false,
+          'birthdayConsentUpdatedAt': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'isVerified': false,
+        });
+      });
+    } on UsernameAlreadyTakenException catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } on StateError catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo completar el perfil: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() => _error =
+            'No se pudo guardar el perfil (${error.code}). Revisa los datos e inténtalo de nuevo.');
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Error al completar el perfil: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() =>
+            _error = 'No se pudo completar el perfil. Inténtalo de nuevo.');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _usernameController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inputDecoration = InputDecoration(
+      filled: true,
+      fillColor: _panel,
+      labelStyle: const TextStyle(color: _muted),
+      prefixIconColor: _gold,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+    );
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'COMPLETA TU PERFIL',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _cream,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Faltan datos básicos de tu cuenta. Completa tu perfil para entrar a WOLVES MATCH.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _muted, fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _firstNameController,
+            enabled: !_saving,
+            textCapitalization: TextCapitalization.words,
+            decoration: inputDecoration.copyWith(labelText: 'Nombre'),
+            validator: (value) => value == null ||
+                    value.trim().isEmpty ||
+                    value.trim().length > 60
+                ? 'Escribe tu nombre (máximo 60 caracteres).'
+                : null,
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _lastNameController,
+            enabled: !_saving,
+            textCapitalization: TextCapitalization.words,
+            decoration: inputDecoration.copyWith(labelText: 'Apellido'),
+            validator: (value) => value == null ||
+                    value.trim().isEmpty ||
+                    value.trim().length > 60
+                ? 'Escribe tu apellido (máximo 60 caracteres).'
+                : null,
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _usernameController,
+            enabled: !_saving,
+            autocorrect: false,
+            textCapitalization: TextCapitalization.none,
+            decoration: inputDecoration.copyWith(
+              labelText: 'Username',
+              prefixIcon: const Icon(Icons.alternate_email),
+              helperText: 'Debe ser único en toda la app.',
+            ),
+            validator: (value) => UsernameRegistryService.validate(value ?? ''),
+          ),
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: _saving ? null : _pickBirthDate,
+            child: InputDecorator(
+              decoration: inputDecoration.copyWith(
+                labelText: 'Fecha de nacimiento',
+                prefixIcon: const Icon(Icons.calendar_month_outlined),
+              ),
+              child: Text(
+                _birthDate == null
+                    ? 'Selecciona una fecha (18 años o más)'
+                    : '${_birthDate!.day.toString().padLeft(2, '0')}/'
+                        '${_birthDate!.month.toString().padLeft(2, '0')}/'
+                        '${_birthDate!.year}',
+                style: TextStyle(color: _birthDate == null ? _muted : _cream),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _phoneController,
+            enabled: !_saving,
+            keyboardType: TextInputType.phone,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: inputDecoration.copyWith(
+              labelText: 'Teléfono celular',
+              hintText: 'Escribe tu número',
+              prefixIcon: CountryCodePicker(
+                initialSelection: 'BO',
+                favorite: const ['BO', 'AR', 'BR', 'CL', 'PE', 'US'],
+                showCountryOnly: false,
+                showOnlyCountryWhenClosed: false,
+                padding: EdgeInsets.zero,
+                textStyle: const TextStyle(color: _cream),
+                dialogTextStyle: const TextStyle(color: _cream),
+                onChanged: (country) {
+                  setState(() {
+                    _phoneCountryCode = country.dialCode ?? '+591';
+                    _phoneCountryIsoCode = country.code ?? 'BO';
+                  });
+                },
+              ),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 112, minHeight: 48),
+            ),
+            validator: (_) => _isPhoneValid
+                ? null
+                : 'Ingresa un número válido de al menos 7 dígitos.',
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFFFF8A80), fontSize: 12),
+            ),
+          ],
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('GUARDAR PERFIL'),
+          ),
+        ],
       ),
     );
   }

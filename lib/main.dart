@@ -4549,6 +4549,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _adminFinanceUnlocked &&
       !_debugRoleBypassActive &&
       _firebaseUser?.emailVerified == true;
+  bool get _canAccessCustomerSupport =>
+      _userRole == 'admin' &&
+      !_debugRoleBypassActive &&
+      _firebaseUser?.emailVerified == true;
   bool get _canManageCafeCatalog {
     final manager = _firebaseUser;
     return _userRole == 'admin' &&
@@ -8799,6 +8803,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   Future<void> _simulateBaristaScan({
     required String customerId,
+    required String figureId,
     required double distanceMeters,
   }) async {
     if (_isProcessingBaristaCanje) return;
@@ -8842,6 +8847,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           employeeUid: employee.uid,
           employeeEmail: employee.email ?? '',
           qrId: qrId,
+          figureId: figureId,
           distanceMeters: distanceMeters,
         );
       } on FirebaseException catch (error, stackTrace) {
@@ -8897,8 +8903,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _isProcessingBaristaCanje = false;
     });
     await _signalSuccessfulCanje();
+    final figureName =
+        coldBrewFigures.firstWhere((figure) => figure.id == figureId).name;
     _showBaristaMessage(
-      'Figurita de Cold Brew entregada y registrada para ${customerId.trim()}.',
+      'Figurita $figureName registrada para ${customerId.trim()}.',
     );
   }
 
@@ -11033,6 +11041,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   Future<void> _showSimulatedScanDialog(BuildContext hostContext) async {
     var customerId = _firebaseUser?.uid ?? '';
     var distanceInput = '12';
+    String? figureId;
     String? validationError;
 
     if (!hostContext.mounted) {
@@ -11066,6 +11075,22 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 ),
               ),
               const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: figureId,
+                decoration: const InputDecoration(
+                  labelText: 'Figura del Cold Brew comprado',
+                ),
+                items: coldBrewFigures
+                    .map(
+                      (figure) => DropdownMenuItem(
+                        value: figure.id,
+                        child: Text(figure.name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) => setDialogState(() => figureId = value),
+              ),
+              const SizedBox(height: 12),
               TextFormField(
                 key: const ValueKey('barista-distance'),
                 initialValue: distanceInput,
@@ -11096,11 +11121,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 final normalizedCustomerId = customerId.trim();
                 final distance = double.tryParse(distanceInput.trim());
                 if (normalizedCustomerId.isEmpty ||
+                    figureId == null ||
                     distance == null ||
                     distance < 0) {
                   setDialogState(() {
                     validationError =
-                        'Ingresa un cliente y una distancia válida.';
+                        'Selecciona la figura e ingresa un cliente y una '
+                        'distancia válida.';
                   });
                   return;
                 }
@@ -11115,6 +11142,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 unawaited(
                   _simulateBaristaScan(
                     customerId: normalizedCustomerId,
+                    figureId: figureId!,
                     distanceMeters: distance,
                   ),
                 );
@@ -11856,7 +11884,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         return _matchCelebration();
 
       case 'wolvesMatch':
-        return WolvesMatchScreen(onClose: back);
+        return WolvesMatchScreen(
+          onClose: back,
+          onCompleteProfile: () => go('profile'),
+        );
 
       case 'mischiefWall':
         return MischiefWallScreen(onClose: () => go(previousPage));
@@ -18460,7 +18491,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         ],
       );
     }
-    if (!_canUseManagementTools) {
+    if (!_canAccessCustomerSupport) {
       return _managementStatusCard(
         'Acceso reservado a Gerencia verificada.',
         error: true,
@@ -28791,7 +28822,14 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       final demoStamps = _coldBrewAlbumCounts[userName] ??
           _coldBrewAlbumCounts[userHandle] ??
           0;
-      return _coldBrewAlbumContent(demoStamps);
+      final demoFigures = coldBrewFigures
+          .take(demoStamps.clamp(0, coldBrewFigures.length).toInt())
+          .map((figure) => figure.id)
+          .toSet();
+      return _coldBrewAlbumContent(
+        demoStamps,
+        collectedFigureIds: demoFigures,
+      );
     }
 
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -28812,14 +28850,31 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             child: CircularProgressIndicator(color: gold),
           );
         }
-        final value = snapshot.data?.data()?['stamps'];
+        final album = snapshot.data?.data();
+        final value = album?['stamps'];
         final stamps = value is num ? value.toInt() : 0;
-        return _coldBrewAlbumContent(stamps);
+        final rawFigures = album?['figures'];
+        final validFigureIds =
+            coldBrewFigures.map((figure) => figure.id).toSet();
+        final collectedFigures = rawFigures is List
+            ? rawFigures
+                .whereType<String>()
+                .where(validFigureIds.contains)
+                .toSet()
+            : <String>{};
+        return _coldBrewAlbumContent(
+          stamps,
+          collectedFigureIds: collectedFigures,
+        );
       },
     );
   }
 
-  Widget _coldBrewAlbumContent(int stamps, {String? errorMessage}) {
+  Widget _coldBrewAlbumContent(
+    int stamps, {
+    Set<String> collectedFigureIds = const {},
+    String? errorMessage,
+  }) {
     final seasonProgress = stamps % 9;
     final season = stamps ~/ 9 + 1;
     const badgeMilestones = [3, 6, 9];
@@ -28950,13 +29005,99 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               ),
             ),
           ),
+          const SizedBox(height: 14),
+          Card(
+            color: card,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'COLECCIÓN DE FIGURITAS',
+                    style: TextStyle(
+                      color: gold,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${collectedFigureIds.length} de ${coldBrewFigures.length} '
+                    'figuras descubiertas',
+                    style: const TextStyle(color: muted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth >= 600 ? 4 : 2;
+                      return GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: coldBrewFigures.length,
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: columns,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                          childAspectRatio: 1.2,
+                        ),
+                        itemBuilder: (context, index) {
+                          final figure = coldBrewFigures[index];
+                          final isCollected =
+                              collectedFigureIds.contains(figure.id);
+                          return Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color:
+                                  isCollected ? const Color(0xFF3A2D16) : card2,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isCollected
+                                    ? gold.withValues(alpha: 0.7)
+                                    : muted.withValues(alpha: 0.2),
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  isCollected
+                                      ? Icons.emoji_food_beverage_outlined
+                                      : Icons.lock_outline,
+                                  color: isCollected ? gold : muted,
+                                  size: 27,
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  figure.name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: isCollected ? cream : muted,
+                                    fontSize: 10,
+                                    fontWeight: isCollected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 12),
           _coldBrewTastingJournal(hasValidatedConsumption: stamps > 0),
           const SizedBox(height: 14),
           const Text(
-            'Las figuritas se agregan cuando el personal valida tu ID de '
-            'miembro en el TPV. Cada validación queda registrada con fecha, '
-            'hora y empleado.',
+            'Cada QR validado desbloquea la figurita del sabor comprado. '
+            'Las 16 figuras se coleccionan una sola vez.',
             textAlign: TextAlign.center,
             style: TextStyle(color: muted, height: 1.5),
           ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -8,9 +9,14 @@ import 'mischief_wall_screen.dart';
 import 'wolves_match_service.dart';
 
 class WolvesMatchScreen extends StatefulWidget {
-  const WolvesMatchScreen({super.key, required this.onClose});
+  const WolvesMatchScreen({
+    super.key,
+    required this.onClose,
+    this.onCompleteProfile,
+  });
 
   final VoidCallback onClose;
+  final VoidCallback? onCompleteProfile;
 
   @override
   State<WolvesMatchScreen> createState() => _WolvesMatchScreenState();
@@ -44,6 +50,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
   bool _saving = false;
   bool _leaving = false;
   bool _openingWall = false;
+  bool _openingIcebreaker = false;
   bool _editing = false;
   bool _consent = false;
   bool _radarRunning = true;
@@ -485,6 +492,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
   }
 
   Widget _errorCard() {
+    final needsProfile = _error?.contains('Completa tu perfil') == true;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -513,8 +521,13 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
             style: const TextStyle(color: _cream, height: 1.4),
           ),
           const SizedBox(height: 12),
+          if (needsProfile && widget.onCompleteProfile != null)
+            FilledButton(
+              onPressed: () => widget.onCompleteProfile?.call(),
+              child: const Text('COMPLETAR PERFIL'),
+            ),
           OutlinedButton(
-            onPressed: _loadState,
+            onPressed: _loading ? null : _loadState,
             child: const Text('INTENTAR DE NUEVO'),
           ),
         ],
@@ -1191,19 +1204,49 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             FilledButton.icon(
-              onPressed: null,
+              onPressed: _saving || _openingIcebreaker
+                  ? null
+                  : () => _openIcebreaker(profile),
               icon: const Icon(Icons.quiz_outlined, size: 18),
-              label: const Text('TRIVIA · TEMPORALMENTE DESACTIVADA'),
+              label: Text(
+                _openingIcebreaker
+                    ? 'ABRIENDO JUEGO…'
+                    : 'ROMPEHIELO · RESPUESTAS SECRETAS',
+              ),
             ),
             const SizedBox(height: 7),
             const Text(
-              'Los juegos volverán cuando puedan validarse de forma segura '
-              'sin Cloud Functions.',
+              'Respondan y descubran qué eligió la otra persona. Sin puntos ni recompensas.',
               style: TextStyle(color: _muted, fontSize: 12),
             ),
           ],
         ),
       );
+
+  Future<void> _openIcebreaker(Map<String, dynamic> profile) async {
+    final peerPublicId = profile['id'] as String?;
+    if (peerPublicId == null || peerPublicId.isEmpty) {
+      _showMessage('No se pudo identificar esta conexión.');
+      return;
+    }
+    setState(() => _openingIcebreaker = true);
+    try {
+      final gameContext = await _service.getIcebreakerContext(peerPublicId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => _MatchIcebreakerDialog(
+          service: _service,
+          gameContext: gameContext,
+          peerName: profile['displayName'] as String? ?? 'Tu conexión',
+        ),
+      );
+    } catch (error) {
+      if (mounted) _showMessage(_messageFor(error));
+    } finally {
+      if (mounted) setState(() => _openingIcebreaker = false);
+    }
+  }
 
   Widget _profileCard(
     Map<String, dynamic> profile, {
@@ -1510,5 +1553,239 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
       default:
         return 'Sin definir';
     }
+  }
+}
+
+class _MatchIcebreakerDialog extends StatefulWidget {
+  const _MatchIcebreakerDialog({
+    required this.service,
+    required this.gameContext,
+    required this.peerName,
+  });
+
+  final WolvesMatchService service;
+  final MatchIcebreakerContext gameContext;
+  final String peerName;
+
+  @override
+  State<_MatchIcebreakerDialog> createState() => _MatchIcebreakerDialogState();
+}
+
+class _MatchIcebreakerDialogState extends State<_MatchIcebreakerDialog> {
+  int _questionIndex = 0;
+  bool _submitting = false;
+  String? _error;
+
+  MatchIcebreakerQuestion get _question =>
+      WolvesMatchService.icebreakerQuestions[_questionIndex];
+
+  Future<void> _submitAnswer(int answerIndex) async {
+    if (_submitting) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await widget.service.submitIcebreakerAnswer(
+        context: widget.gameContext,
+        questionId: _question.id,
+        answerIndex: answerIndex,
+      );
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo guardar la respuesta rompehielos: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() {
+          _error = error.code == 'permission-denied'
+              ? 'La conexión ya no está disponible para jugar.'
+              : 'No se pudo guardar tu respuesta. Inténtalo de nuevo.';
+        });
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Error al guardar la respuesta rompehielos: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() => _error = 'No se pudo guardar tu respuesta.');
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ownAnswer = widget.service.watchIcebreakerAnswer(
+      context: widget.gameContext,
+      questionId: _question.id,
+      publicId: widget.gameContext.ownPublicId,
+    );
+    return AlertDialog(
+      backgroundColor: const Color(0xFF111619),
+      title: const Text(
+        'ROMPEHIELO',
+        textAlign: TextAlign.center,
+        style: TextStyle(color: Color(0xFFC6A574), letterSpacing: 1.4),
+      ),
+      content: SizedBox(
+        width: 420,
+        child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          key: ValueKey('own-${_question.id}'),
+          stream: ownAnswer,
+          builder: (context, ownSnapshot) {
+            if (ownSnapshot.hasError) {
+              return const Text(
+                'No se pudo cargar esta pregunta.',
+                style: TextStyle(color: Color(0xFFFF8A80)),
+              );
+            }
+            if (!ownSnapshot.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(color: Color(0xFFC6A574)),
+              );
+            }
+            final ownData = ownSnapshot.data!.data();
+            final ownIndex = ownData?['answerIndex'] is int
+                ? ownData!['answerIndex'] as int
+                : null;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'PREGUNTA ${_questionIndex + 1} DE '
+                  '${WolvesMatchService.icebreakerQuestions.length}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFC6A574),
+                    fontSize: 10,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _question.prompt,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFF2E8D8),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                for (var index = 0; index < _question.options.length; index++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 7),
+                    child: OutlinedButton(
+                      onPressed: ownIndex != null || _submitting
+                          ? null
+                          : () => _submitAnswer(index),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: ownIndex == index
+                            ? const Color(0xFFC6A574)
+                            : const Color(0xFFF2E8D8),
+                        side: BorderSide(
+                          color: ownIndex == index
+                              ? const Color(0xFFC6A574)
+                              : const Color(0xFF5A4934),
+                        ),
+                      ),
+                      child: Text(_question.options[index]),
+                    ),
+                  ),
+                if (ownIndex != null) ...[
+                  const SizedBox(height: 5),
+                  const Text(
+                    'Tu respuesta quedó guardada.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Color(0xFFC6A574), fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                    key: ValueKey('peer-${_question.id}'),
+                    stream: widget.service.watchIcebreakerAnswer(
+                      context: widget.gameContext,
+                      questionId: _question.id,
+                      publicId: widget.gameContext.peerPublicId,
+                    ),
+                    builder: (context, peerSnapshot) {
+                      if (peerSnapshot.hasError) {
+                        return const Text(
+                          'No se pudo consultar la respuesta de tu conexión.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFFFF8A80),
+                            fontSize: 11,
+                          ),
+                        );
+                      }
+                      final peerData = peerSnapshot.data?.data();
+                      final peerIndex = peerData?['answerIndex'] is int
+                          ? peerData!['answerIndex'] as int
+                          : null;
+                      return Text(
+                        peerIndex == null
+                            ? 'Esperando la respuesta de ${widget.peerName}…'
+                            : '${widget.peerName} eligió: '
+                                '${_question.options[peerIndex]}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFFF2E8D8),
+                          fontSize: 12,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFFF8A80),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+                if (_submitting)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFFC6A574),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _questionIndex == 0 || _submitting
+              ? null
+              : () => setState(() {
+                    _questionIndex--;
+                    _error = null;
+                  }),
+          child: const Text('ANTERIOR'),
+        ),
+        TextButton(
+          onPressed: _questionIndex ==
+                  WolvesMatchService.icebreakerQuestions.length - 1
+              ? () => Navigator.of(context).pop()
+              : () => setState(() {
+                    _questionIndex++;
+                    _error = null;
+                  }),
+          child: Text(
+            _questionIndex == WolvesMatchService.icebreakerQuestions.length - 1
+                ? 'CERRAR'
+                : 'SIGUIENTE',
+          ),
+        ),
+      ],
+    );
   }
 }

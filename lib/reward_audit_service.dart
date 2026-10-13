@@ -1,6 +1,33 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'collectible_models.dart';
 
+class ColdBrewFigure {
+  const ColdBrewFigure({required this.id, required this.name});
+
+  final String id;
+  final String name;
+}
+
+const coldBrewFigures = <ColdBrewFigure>[
+  ColdBrewFigure(id: 'classic', name: 'Cold Brew'),
+  ColdBrewFigure(id: 'orange', name: 'Orange Cold Brew'),
+  ColdBrewFigure(id: 'nitro', name: 'Nitro Cold Brew'),
+  ColdBrewFigure(id: 'wolves_milk', name: 'Wolves Milk Cold Brew'),
+  ColdBrewFigure(id: 'orange_milk', name: 'Orange Milk Cold Brew'),
+  ColdBrewFigure(id: 'berry_milk', name: 'Berry Milk Cold Brew'),
+  ColdBrewFigure(id: 'pineapple_milk', name: 'Pineapple Milk Cold Brew'),
+  ColdBrewFigure(id: 'coconut_milk', name: 'Coconut Milk Cold Brew'),
+  ColdBrewFigure(
+      id: 'passion_fruit_milk', name: 'Passion Fruit Milk Cold Brew'),
+  ColdBrewFigure(id: 'peach_milk', name: 'Peach Milk Cold Brew'),
+  ColdBrewFigure(id: 'vanilla_milk', name: 'Vanilla Milk Cold Brew'),
+  ColdBrewFigure(id: 'copoazu_milk', name: 'Copoazu Milk Cold Brew'),
+  ColdBrewFigure(id: 'lemon_milk', name: 'Lemon Milk Cold Brew'),
+  ColdBrewFigure(id: 'blackberry_milk', name: 'Blackberry Milk Cold Brew'),
+  ColdBrewFigure(id: 'apple_milk', name: 'Apple Milk Cold Brew'),
+  ColdBrewFigure(id: 'lulo_milk', name: 'Lulo Milk Cold Brew'),
+];
+
 class CollectibleUnitRegistration {
   const CollectibleUnitRegistration({
     required this.modelCode,
@@ -169,11 +196,19 @@ class RewardAuditService {
     required String employeeUid,
     required String employeeEmail,
     required String qrId,
+    required String figureId,
     required double distanceMeters,
   }) async {
     if (!RegExp(r'^coffee-wolves:cold-brew:[A-Za-z0-9_=-]+:\d+$')
         .hasMatch(qrId)) {
       throw ArgumentError.value(qrId, 'qrId', 'El QR de canje no es válido.');
+    }
+    if (!coldBrewFigures.any((figure) => figure.id == figureId)) {
+      throw ArgumentError.value(
+        figureId,
+        'figureId',
+        'La figurita de Cold Brew no es válida.',
+      );
     }
     if (!distanceMeters.isFinite || distanceMeters < 0 || distanceMeters > 50) {
       throw ArgumentError.value(
@@ -192,6 +227,15 @@ class RewardAuditService {
         throw StateError('Este QR ya fue canjeado y marcado como entregado.');
       }
       final stamps = (album.data()?['stamps'] as num?)?.toInt() ?? 0;
+      final collectedFigures = (album.data()?['figures'] as List<dynamic>? ??
+              const [])
+          .whereType<String>()
+          .toSet()
+        ..add(figureId);
+      final figures = coldBrewFigures
+          .where((figure) => collectedFigures.contains(figure.id))
+          .map((figure) => figure.id)
+          .toList(growable: false);
       final redemption = _auditData(
         customerUid: customerUid,
         employeeUid: employeeUid,
@@ -200,12 +244,14 @@ class RewardAuditService {
         rewardId: qrId,
       )
         ..['distanceMeters'] = distanceMeters
+        ..['figureId'] = figureId
         ..['status'] = 'delivered';
 
       transaction.set(auditRef, redemption);
       transaction.set(albumRef, {
         'customerUid': customerUid,
         'stamps': stamps + 1,
+        'figures': figures,
         'updatedAt': FieldValue.serverTimestamp(),
         'updatedBy': employeeUid,
         'lastRedemptionId': auditRef.id,

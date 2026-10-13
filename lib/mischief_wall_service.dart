@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show debugPrint, debugPrintStack;
 
 class MischiefWallService {
   MischiefWallService({
@@ -12,8 +14,8 @@ class MischiefWallService {
     FirebaseFunctions? functions,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _storage = storage ?? FirebaseStorage.instance,
-        _functions = functions ??
-            FirebaseFunctions.instanceFor(region: 'us-central1');
+        _functions =
+            functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
@@ -23,16 +25,14 @@ class MischiefWallService {
       _firestore.collection('mischiefPosts');
 
   Stream<QuerySnapshot<Map<String, dynamic>>> watchPosts() {
-    return _posts
-        .orderBy('createdAt', descending: true)
-        .limit(50)
-        .snapshots();
+    return _posts.orderBy('createdAt', descending: true).limit(50).snapshots();
   }
 
   Future<void> createPost({
     required Uint8List imageBytes,
     required String dogName,
     required String description,
+    void Function(String stage)? onProgress,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.isAnonymous) {
@@ -57,15 +57,29 @@ class MischiefWallService {
     final post = _posts.doc();
     final photoPath = 'mischief-posts/${user.uid}/${post.id}.jpg';
     final photoReference = _storage.ref(photoPath);
+    var postWriteStarted = false;
     try {
-      await photoReference.putData(
+      onProgress?.call('SUBIENDO FOTO…');
+      final uploadTask = photoReference.putData(
         imageBytes,
         SettableMetadata(contentType: 'image/jpeg'),
       );
-      final photoUrl = await photoReference.getDownloadURL();
+      await uploadTask.timeout(
+        const Duration(seconds: 45),
+        onTimeout: () async {
+          await uploadTask.cancel().timeout(const Duration(seconds: 5));
+          throw TimeoutException('La subida de la foto tardó demasiado.');
+        },
+      );
+      onProgress?.call('PREPARANDO PUBLICACIÓN…');
+      final photoUrl = await photoReference
+          .getDownloadURL()
+          .timeout(const Duration(seconds: 15));
       final ownerName = user.displayName?.trim().isNotEmpty == true
           ? user.displayName!.trim()
           : user.email?.split('@').first ?? 'Miembro de la manada';
+      onProgress?.call('GUARDANDO PUBLICACIÓN…');
+      postWriteStarted = true;
       await post.set({
         'ownerUid': user.uid,
         'ownerName':
@@ -77,12 +91,32 @@ class MischiefWallService {
         'innocentVotes': 0,
         'guiltyVotes': 0,
         'createdAt': FieldValue.serverTimestamp(),
-      });
-    } catch (_) {
-      try {
-        await photoReference.delete();
-      } on FirebaseException {
-        // The upload can fail before a Storage object exists.
+      }).timeout(const Duration(seconds: 30));
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo publicar en el muro: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!(postWriteStarted && error is TimeoutException)) {
+        try {
+          await photoReference.delete().timeout(const Duration(seconds: 10));
+        } on FirebaseException catch (cleanupError, cleanupStackTrace) {
+          if (cleanupError.code != 'object-not-found' &&
+              cleanupError.code != 'unauthorized') {
+            debugPrint(
+              'No se pudo limpiar la foto de la publicación: '
+              '${cleanupError.code}',
+            );
+            debugPrintStack(stackTrace: cleanupStackTrace);
+          }
+        } on TimeoutException catch (cleanupError, cleanupStackTrace) {
+          debugPrint('La limpieza de la foto excedió el tiempo límite.');
+          debugPrintStack(
+            stackTrace: cleanupStackTrace,
+            label: cleanupError.message,
+          );
+        } catch (cleanupError, cleanupStackTrace) {
+          debugPrint('No se pudo limpiar la foto: $cleanupError');
+          debugPrintStack(stackTrace: cleanupStackTrace);
+        }
       }
       rethrow;
     }

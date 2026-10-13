@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -32,6 +33,7 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
   final _picker = ImagePicker();
   late Stream<QuerySnapshot<Map<String, dynamic>>> _postsStream;
   bool _publishing = false;
+  String _publishingStage = 'SUBIENDO FOTO…';
   bool _voting = false;
   bool _leaving = false;
   String _feedSort = 'recent';
@@ -161,18 +163,44 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
         imageBytes: imageBytes,
         dogName: dogNameController.text,
         description: descriptionController.text,
+        onProgress: (stage) {
+          if (mounted) setState(() => _publishingStage = stage);
+        },
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('¡La travesura ya está en el muro!')),
       );
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _error = _publishingStage == 'GUARDANDO PUBLICACIÓN…'
+            ? 'La confirmación tardó demasiado. Actualiza el muro antes de '
+                'intentar publicar otra vez.'
+            : 'La carga tardó demasiado. Revisa tu conexión e inténtalo '
+                'de nuevo.';
+      });
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('Firebase rechazó la publicación: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      setState(() {
+        _error =
+            'No se pudo publicar (${error.code}). Revisa tu conexión y vuelve '
+            'a intentarlo.';
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = 'No se pudo publicar: $error');
     } finally {
       dogNameController.dispose();
       descriptionController.dispose();
-      if (mounted) setState(() => _publishing = false);
+      if (mounted) {
+        setState(() {
+          _publishing = false;
+          _publishingStage = 'SUBIENDO FOTO…';
+        });
+      }
     }
   }
 
@@ -440,7 +468,7 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.add_a_photo_outlined),
-          label: Text(_publishing ? 'PUBLICANDO…' : 'SUBIR TRAVESURA'),
+          label: Text(_publishing ? _publishingStage : 'SUBIR TRAVESURA'),
         ),
         body: user == null
             ? const Center(

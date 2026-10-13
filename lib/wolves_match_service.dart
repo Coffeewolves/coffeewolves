@@ -4,6 +4,30 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+class MatchIcebreakerQuestion {
+  const MatchIcebreakerQuestion({
+    required this.id,
+    required this.prompt,
+    required this.options,
+  });
+
+  final String id;
+  final String prompt;
+  final List<String> options;
+}
+
+class MatchIcebreakerContext {
+  const MatchIcebreakerContext({
+    required this.pairId,
+    required this.ownPublicId,
+    required this.peerPublicId,
+  });
+
+  final String pairId;
+  final String ownPublicId;
+  final String peerPublicId;
+}
+
 class WolvesMatchService {
   WolvesMatchService({
     FirebaseAuth? auth,
@@ -23,6 +47,58 @@ class WolvesMatchService {
     'Conversaciones',
     'Deportes',
   };
+  static const icebreakerQuestions = [
+    MatchIcebreakerQuestion(
+      id: 'q0',
+      prompt: '¿Cuál sería tu plan ideal para compartir un café?',
+      options: [
+        'Conversar sin prisa',
+        'Probar algo nuevo del menú',
+        'Leer o trabajar en compañía',
+        'Conocer a más personas',
+      ],
+    ),
+    MatchIcebreakerQuestion(
+      id: 'q1',
+      prompt: '¿Qué detalle suele alegrarte el día?',
+      options: [
+        'Una buena canción',
+        'Un mensaje inesperado',
+        'Un paseo al aire libre',
+        'Un momento con mi mascota',
+      ],
+    ),
+    MatchIcebreakerQuestion(
+      id: 'q2',
+      prompt: '¿Qué te gustaría aprender por diversión?',
+      options: [
+        'Preparar café',
+        'Tocar un instrumento',
+        'Dibujar o pintar',
+        'Cocinar algo nuevo',
+      ],
+    ),
+    MatchIcebreakerQuestion(
+      id: 'q3',
+      prompt: '¿Cómo disfrutas más un día libre?',
+      options: [
+        'Aventura espontánea',
+        'Plan tranquilo en casa',
+        'Visitar un lugar nuevo',
+        'Compartir con amigos',
+      ],
+    ),
+    MatchIcebreakerQuestion(
+      id: 'q4',
+      prompt: 'Elige una conversación para empezar:',
+      options: [
+        '¿Qué música recomiendas?',
+        '¿Cuál fue tu último plan favorito?',
+        '¿Qué mascota te gustaría tener?',
+        '¿Qué pequeño gusto nunca falla?',
+      ],
+    ),
+  ];
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -44,6 +120,91 @@ class WolvesMatchService {
 
   CollectionReference<Map<String, dynamic>> get _blocks =>
       _firestore.collection('wolvesMatchBlocks');
+
+  CollectionReference<Map<String, dynamic>> _icebreakerAnswers(String pairId) =>
+      _firestore.collection('wolvesMatchIcebreakers').doc(pairId).collection(
+            'answers',
+          );
+
+  Future<MatchIcebreakerContext> getIcebreakerContext(
+    String peerPublicId,
+  ) async {
+    final user = await _requireEligibleUser();
+    final own = await _participants.doc(user.uid).get();
+    final ownPublicId = own.data()?['matchPublicId'] as String?;
+    if (ownPublicId == null || own.data()?['status'] != 'active') {
+      throw StateError('Activa tu perfil de WOLVES MATCH para jugar.');
+    }
+    _validatePublicId(peerPublicId, ownPublicId);
+    final pairId = _pairId(ownPublicId, peerPublicId);
+    final pair = await _pairs.doc(pairId).get();
+    if (pair.data()?['status'] != 'mutual' ||
+        !(pair.data()?['publicIds'] as List<dynamic>? ?? const [])
+            .toSet()
+            .containsAll([ownPublicId, peerPublicId])) {
+      throw StateError('El juego solo está disponible para conexiones mutuas.');
+    }
+    return MatchIcebreakerContext(
+      pairId: pairId,
+      ownPublicId: ownPublicId,
+      peerPublicId: peerPublicId,
+    );
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> watchIcebreakerAnswer({
+    required MatchIcebreakerContext context,
+    required String questionId,
+    required String publicId,
+  }) {
+    return _icebreakerAnswers(context.pairId)
+        .doc('${questionId}__$publicId')
+        .snapshots();
+  }
+
+  Future<void> submitIcebreakerAnswer({
+    required MatchIcebreakerContext context,
+    required String questionId,
+    required int answerIndex,
+  }) async {
+    final question = icebreakerQuestions.where((item) => item.id == questionId);
+    if (question.isEmpty ||
+        answerIndex < 0 ||
+        answerIndex >= question.first.options.length) {
+      throw ArgumentError('La respuesta no es válida.');
+    }
+    final user = await _requireEligibleUser();
+    final ownReference = _participants.doc(user.uid);
+    final pairReference = _pairs.doc(context.pairId);
+    final answerReference = _icebreakerAnswers(context.pairId)
+        .doc('${questionId}__${context.ownPublicId}');
+
+    await _firestore.runTransaction<void>((transaction) async {
+      final snapshots = await Future.wait([
+        transaction.get(ownReference),
+        transaction.get(pairReference),
+        transaction.get(answerReference),
+      ]);
+      final own = snapshots[0].data();
+      final pair = snapshots[1].data();
+      if (own?['matchPublicId'] != context.ownPublicId ||
+          own?['status'] != 'active' ||
+          pair?['status'] != 'mutual' ||
+          !(pair?['publicIds'] as List<dynamic>? ?? const [])
+              .toSet()
+              .containsAll([context.ownPublicId, context.peerPublicId])) {
+        throw StateError('La conexión ya no está disponible para jugar.');
+      }
+      if (snapshots[2].exists) {
+        throw StateError('Ya respondiste esta pregunta.');
+      }
+      transaction.set(answerReference, {
+        'questionId': questionId,
+        'publicId': context.ownPublicId,
+        'answerIndex': answerIndex,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
 
   Future<Map<String, dynamic>> getState() async {
     final user = await _requireEligibleUser();

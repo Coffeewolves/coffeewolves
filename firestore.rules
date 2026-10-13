@@ -188,6 +188,21 @@ service cloud.firestore {
         && audit.redeemedAt == request.time;
     }
 
+    function coldBrewFigureIds() {
+      return [
+        'classic', 'orange', 'nitro', 'wolves_milk', 'orange_milk',
+        'berry_milk', 'pineapple_milk', 'coconut_milk',
+        'passion_fruit_milk', 'peach_milk', 'vanilla_milk', 'copoazu_milk',
+        'lemon_milk', 'blackberry_milk', 'apple_milk', 'lulo_milk'
+      ];
+    }
+
+    function validColdBrewFigureList(figures) {
+      return figures is list
+        && figures.toSet().size() == figures.size()
+        && figures.toSet().hasOnly(coldBrewFigureIds());
+    }
+
     function validPassportMethod(methodName) {
       return methodName in [
         'Dripper V60', 'Chemex', 'Origami', 'Aeropress',
@@ -2627,20 +2642,41 @@ service cloud.firestore {
     }
 
     match /coldBrewAlbums/{customerUid} {
+      function validFigureUpdate() {
+        let previousFigures = resource.data.get('figures', []);
+        let updatedFigures = request.resource.data.figures;
+        let redemptionPath =
+          /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId);
+        let figureId = getAfter(redemptionPath).data.figureId;
+        return previousFigures is list
+          && validColdBrewFigureList(updatedFigures)
+          && updatedFigures.hasAll(previousFigures)
+          && figureId in coldBrewFigureIds()
+          && figureId in updatedFigures
+          && updatedFigures.size() == previousFigures.size()
+            + (figureId in previousFigures ? 0 : 1);
+      }
+
       allow get: if request.auth != null
         && (request.auth.uid == customerUid || isVerifiedStaff() || isAdmin());
       allow list: if isAdmin();
 
       allow create: if isVerifiedStaff()
         && request.resource.data.keys().hasOnly([
-          'customerUid', 'stamps', 'updatedAt', 'updatedBy',
+          'customerUid', 'stamps', 'figures', 'updatedAt', 'updatedBy',
           'lastRedemptionId'
         ])
         && request.resource.data.customerUid == customerUid
         && request.resource.data.stamps == 1
+        && validColdBrewFigureList(request.resource.data.figures)
+        && request.resource.data.figures.size() == 1
         && request.resource.data.updatedAt == request.time
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.lastRedemptionId is string
+        && request.resource.data.figures[0]
+          == getAfter(
+            /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId)
+          ).data.figureId
         && auditMatches(
           request.resource.data.lastRedemptionId,
           customerUid,
@@ -2652,11 +2688,12 @@ service cloud.firestore {
 
       allow update: if isVerifiedStaff()
         && request.resource.data.keys().hasOnly([
-          'customerUid', 'stamps', 'updatedAt', 'updatedBy',
+          'customerUid', 'stamps', 'figures', 'updatedAt', 'updatedBy',
           'lastRedemptionId'
         ])
         && request.resource.data.customerUid == customerUid
         && request.resource.data.stamps == resource.data.stamps + 1
+        && validFigureUpdate()
         && request.resource.data.updatedAt == request.time
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.lastRedemptionId is string
@@ -3440,7 +3477,8 @@ service cloud.firestore {
       allow create: if isVerifiedStaff()
         && request.resource.data.keys().hasOnly([
           'customerUid', 'employeeUid', 'employeeEmail',
-          'rewardType', 'rewardId', 'redeemedAt', 'distanceMeters', 'status'
+          'rewardType', 'rewardId', 'figureId', 'redeemedAt',
+          'distanceMeters', 'status'
         ])
         && request.resource.data.keys().hasAll([
           'customerUid', 'employeeUid', 'employeeEmail',
@@ -3460,6 +3498,7 @@ service cloud.firestore {
           request.resource.data.rewardType == 'coldBrewStamp'
             && redemptionId == request.resource.data.rewardId
             && request.resource.data.status == 'delivered'
+            && request.resource.data.figureId in coldBrewFigureIds()
             && request.resource.data.distanceMeters is number
             && request.resource.data.distanceMeters >= 0
             && request.resource.data.distanceMeters <= 50
@@ -3651,6 +3690,91 @@ service cloud.firestore {
         && request.resource.data.status == 'open'
         && request.resource.data.createdAt == request.time;
       allow get, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /wolvesMatchIcebreakers/{pairId}/answers/{answerId} {
+      function icebreakerPairPath() {
+        return /databases/$(database)/documents/wolvesMatchPairs/$(pairId);
+      }
+
+      function icebreakerPairIsActive() {
+        return matchAccountEligible()
+          && exists(ownMatchParticipantPath())
+          && get(ownMatchParticipantPath()).data.status == 'active'
+          && exists(icebreakerPairPath())
+          && get(icebreakerPairPath()).data.status == 'mutual'
+          && get(icebreakerPairPath()).data.publicIds is list
+          && get(icebreakerPairPath()).data.publicIds.size() == 2
+          && pairId == get(icebreakerPairPath()).data.publicIds[0]
+            + '__' + get(icebreakerPairPath()).data.publicIds[1]
+          && ownMatchPublicId() in get(icebreakerPairPath()).data.publicIds
+          && compatibleActiveMatchPair(
+            get(icebreakerPairPath()).data.publicIds[0],
+            get(icebreakerPairPath()).data.publicIds[1]
+          );
+      }
+
+      function validIcebreakerAnswer(data) {
+        return data.keys().hasOnly([
+            'questionId', 'publicId', 'answerIndex', 'createdAt'
+          ])
+          && data.keys().hasAll([
+            'questionId', 'publicId', 'answerIndex', 'createdAt'
+          ])
+          && data.questionId.matches('^q[0-4]$')
+          && data.publicId in get(icebreakerPairPath()).data.publicIds
+          && data.answerIndex is int
+          && data.answerIndex >= 0
+          && data.answerIndex <= 3
+          && data.createdAt is timestamp;
+      }
+
+      function canReadIcebreakerAnswer() {
+        let ownAnswerId =
+          resource.data.questionId + '__' + ownMatchPublicId();
+        return icebreakerPairIsActive()
+          && validIcebreakerAnswer(resource.data)
+          && answerId
+            == resource.data.questionId + '__' + resource.data.publicId
+          && (
+            resource.data.publicId == ownMatchPublicId()
+            || (
+              exists(
+                /databases/$(database)/documents/wolvesMatchIcebreakers/$(pairId)/answers/$(ownAnswerId)
+              )
+              && exists(
+                /databases/$(database)/documents/wolvesMatchIcebreakers/$(pairId)/answers/$(answerId)
+              )
+            )
+          );
+      }
+
+      function isOwnIcebreakerAnswerId() {
+        return answerId in [
+          'q0__' + ownMatchPublicId(),
+          'q1__' + ownMatchPublicId(),
+          'q2__' + ownMatchPublicId(),
+          'q3__' + ownMatchPublicId(),
+          'q4__' + ownMatchPublicId()
+        ];
+      }
+
+      allow get: if icebreakerPairIsActive()
+          && (
+            !exists(
+              /databases/$(database)/documents/wolvesMatchIcebreakers/$(pairId)/answers/$(answerId)
+            )
+            && isOwnIcebreakerAnswerId()
+            || canReadIcebreakerAnswer()
+          );
+      allow list: if false;
+      allow create: if icebreakerPairIsActive()
+          && validIcebreakerAnswer(request.resource.data)
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.publicId == ownMatchPublicId()
+        && answerId
+          == request.resource.data.questionId + '__' + ownMatchPublicId();
       allow update, delete: if false;
     }
 
