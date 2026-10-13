@@ -313,30 +313,31 @@ fondo con textura sutil, y abren los perfiles oficiales.
 WOLVES MATCH es una función voluntaria independiente del perfil público. Cada
 participante verificado y mayor de 18 años elige intención, nombre visible,
 biografía e intereses; solo una activación con consentimiento explícito publica
-un perfil reducido a otros participantes activos con intención compatible. Las
-recomendaciones, intereses, aceptaciones mutuas, descartes, bloqueos y reportes
-se validan mediante Cloud Functions. Las colecciones `wolvesMatchParticipants`,
-`wolvesMatchPublicIds`, `wolvesMatchPairs`, `wolvesMatchBlocks` y
-`wolvesMatchReports` deniegan acceso directo al cliente en Firestore Rules. La
-API callable devuelve únicamente nombre visible, biografía, intereses e
-intención; no devuelve correo, teléfono, ubicación ni UID, y el backend rechaza
-datos de contacto o patrones de direcciones/coordenadas en el nombre y la
-biografía.
-Pasar, pausar y abandonar no generan notificaciones públicas. Para habilitar el
-backend, despliega las Functions y reglas con Firebase CLI:
+un perfil reducido a otros participantes activos con intención compatible.
+Perfiles, recomendaciones, intereses, aceptaciones mutuas, descartes, bloqueos y
+reportes usan consultas y transacciones directas de Firestore, protegidas por
+reglas que exigen sesión verificada, mayoría de edad declarada, consentimiento
+para activar el perfil y pertenencia a cada conexión. Los documentos públicos
+de Match no incluyen UID, correo ni teléfono; el cliente y las reglas rechazan
+patrones comunes de datos de contacto y ubicación en el nombre y la biografía.
+Las reglas deben desplegarse antes de habilitar la versión directa:
 
 ```sh
-firebase deploy --only functions,firestore:rules
+firebase deploy --only firestore:rules
 ```
 
-Hasta desplegarlas, la pantalla reportará el error del servicio. La edad se
-comprueba en el backend usando la fecha declarada en el perfil; esto no equivale
-a una verificación legal de identidad o edad.
+La trivia y «¿Qué prefieres?» de Coffee Pup están temporalmente desactivadas:
+su validación y las recompensas requieren verificación confiable de servidor y
+no se conceden desde el cliente en el plan Spark. Perfiles activos antiguos se
+publican en la nueva colección al entrar a Match. Las conexiones históricas no
+se migran porque sus documentos contienen UID privados y no se exponen al
+cliente. La edad se comprueba usando la fecha declarada en el perfil; esto no
+equivale a una verificación legal de identidad o edad.
 
 El radar de WOLVES MATCH es una representación visual animada de los perfiles
-compatibles recibidos por la callable; no realiza búsquedas geográficas, no
+compatibles recibidos desde Firestore; no realiza búsquedas geográficas, no
 solicita permisos de ubicación y no finge distancias de 5 km. Las burbujas
-muestran únicamente iniciales de participantes reales devueltos por el backend.
+muestran únicamente iniciales de participantes reales.
 
 La portada y el menú incluyen enlaces
 de acción a Facebook, Instagram, TikTok y WhatsApp, tomados del sitio oficial.

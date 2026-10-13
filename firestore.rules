@@ -269,6 +269,277 @@ service cloud.firestore {
         && usernameProfileMatches(data.uid, username, data.role);
     }
 
+    function adultMatchBirthDate(birthDate) {
+      let birthDateParts = birthDate.split('-');
+      return birthDate is string
+        && birthDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && int(birthDateParts[0]) <= request.time.year() - 18
+        && (
+          int(birthDateParts[0]) < request.time.year() - 18
+          || int(birthDateParts[1]) < request.time.month()
+          || (
+            int(birthDateParts[1]) == request.time.month()
+            && int(birthDateParts[2]) <= request.time.day()
+          )
+        )
+        && int(birthDateParts[1]) >= 1
+        && int(birthDateParts[1]) <= 12
+        && int(birthDateParts[2]) >= 1
+        && int(birthDateParts[2]) <= 31;
+    }
+
+    function matchAccountEligible() {
+      let profilePath =
+        /databases/$(database)/documents/users/$(request.auth.uid);
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && exists(profilePath)
+        && adultMatchBirthDate(
+          get(profilePath).data.get(
+            'birthDate',
+            get(profilePath).data.get('dateOfBirth', '')
+          )
+        );
+    }
+
+    function validMatchPublicId(publicId) {
+      return publicId is string
+        && publicId.matches('^[A-Za-z0-9_-]{8,80}$');
+    }
+
+    function validMatchIntention(intention) {
+      return intention in ['friendship', 'romantic', 'both'];
+    }
+
+    function matchIntentionsCompatible(intentionA, intentionB) {
+      return validMatchIntention(intentionA)
+        && validMatchIntention(intentionB)
+        && (
+          intentionA == 'both'
+          || intentionB == 'both'
+          || intentionA == intentionB
+        );
+    }
+
+    function validMatchProfileFields(data) {
+      return data.keys().hasOnly([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'matchPublicId', 'consentAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'matchPublicId', 'consentAt', 'createdAt', 'updatedAt'
+        ])
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 40
+        && data.bio is string
+        && data.bio.size() <= 180
+        && !matchTextContainsPrivateContact(data.displayName + '\n' + data.bio)
+        && validMatchIntention(data.intention)
+        && data.interests is list
+        && data.interests.size() <= 5
+        && data.interests.toSet().size() == data.interests.size()
+        && data.interests.toSet().hasOnly([
+          'Café de especialidad', 'Eventos', 'Música', 'Lectura',
+          'Naturaleza', 'Mascotas', 'Arte', 'Viajes',
+          'Conversaciones', 'Deportes'
+        ])
+        && data.status in ['configuring', 'active', 'paused', 'left']
+        && validMatchPublicId(data.matchPublicId)
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time
+        && (
+          data.status != 'active'
+          || data.consentAt == request.time
+        );
+    }
+
+    function matchTextContainsPrivateContact(text) {
+      return text.matches(
+          '(?s).*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}.*'
+        )
+        || text.matches('(?s).*\\+?[0-9][0-9\\s().-]{8,}[0-9].*')
+        || text.matches(
+          '(?i).*-?[0-9]{1,3}[.][0-9]{3,}\\s*[,;]\\s*-?[0-9]{1,3}[.][0-9]{3,}.*'
+        )
+        || text.matches(
+          '(?i).*(calle|av(enida)?|pasaje|carretera|street|avenue)\\s+([a-z]+\\s+)?[0-9]+.*'
+        );
+    }
+
+    function ownMatchParticipantPath() {
+      return /databases/$(database)/documents/wolvesMatchParticipants/$(request.auth.uid);
+    }
+
+    function ownMatchPublicId() {
+      return get(ownMatchParticipantPath()).data.matchPublicId;
+    }
+
+    function ownsMatchPublicId(publicId) {
+      return matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && get(ownMatchParticipantPath()).data.matchPublicId == publicId;
+    }
+
+    function matchProfileAt(publicId) {
+      return /databases/$(database)/documents/wolvesMatchPublicProfiles/$(publicId);
+    }
+
+    function matchPublicIdAt(publicId) {
+      return /databases/$(database)/documents/wolvesMatchPublicIds/$(publicId);
+    }
+
+    function matchProfileOwnedByCurrentUser(publicId) {
+      return exists(matchPublicIdAt(publicId))
+        && get(matchPublicIdAt(publicId)).data.uid == request.auth.uid;
+    }
+
+    function activeMatchProfile(publicId) {
+      return validMatchPublicId(publicId)
+        && exists(matchProfileAt(publicId))
+        && get(matchProfileAt(publicId)).data.status == 'active';
+    }
+
+    function matchPairAt(publicIdA, publicIdB) {
+      return /databases/$(database)/documents/wolvesMatchPairs/$(publicIdA + '__' + publicIdB);
+    }
+
+    function matchPairExists(publicIdA, publicIdB) {
+      return exists(matchPairAt(publicIdA, publicIdB))
+        || exists(matchPairAt(publicIdB, publicIdA));
+    }
+
+    function readableMatchPair(data) {
+      return matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && data.publicIds is list
+        && data.publicIds.size() == 2
+        && ownMatchPublicId() in data.publicIds;
+    }
+
+    function canGetMissingMatchPair(pairId) {
+      let ownId = get(ownMatchParticipantPath()).data.matchPublicId;
+      let pairPath =
+        /databases/$(database)/documents/wolvesMatchPairs/$(pairId);
+      return matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && get(ownMatchParticipantPath()).data.status == 'active'
+        && !exists(pairPath)
+        && (
+          pairId.matches(
+            '^' + ownId + '__[A-Za-z0-9_-]{8,80}$'
+          )
+          || pairId.matches(
+            '^[A-Za-z0-9_-]{8,80}__' + ownId + '$'
+          )
+        );
+    }
+
+    function compatibleActiveMatchPair(publicIdA, publicIdB) {
+      return activeMatchProfile(publicIdA)
+        && activeMatchProfile(publicIdB)
+        && matchIntentionsCompatible(
+          get(matchProfileAt(publicIdA)).data.intention,
+          get(matchProfileAt(publicIdB)).data.intention
+        )
+        && !exists(
+          /databases/$(database)/documents/wolvesMatchBlocks/$(publicIdA)/users/$(publicIdB)
+        )
+        && !exists(
+          /databases/$(database)/documents/wolvesMatchBlocks/$(publicIdB)/users/$(publicIdA)
+        );
+    }
+
+    function validMatchPairData(data, pairId) {
+      return data.keys().hasOnly([
+          'publicIds', 'status', 'interestFromPublicId',
+          'decidedByPublicId', 'createdAt', 'updatedAt',
+          'mutualAt', 'decidedAt'
+        ])
+        && data.keys().hasAll([
+          'publicIds', 'status', 'interestFromPublicId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.publicIds is list
+        && data.publicIds.size() == 2
+        && validMatchPublicId(data.publicIds[0])
+        && validMatchPublicId(data.publicIds[1])
+        && data.publicIds[0] != data.publicIds[1]
+        && pairId == data.publicIds[0] + '__' + data.publicIds[1]
+        && data.status in ['pending', 'mutual', 'declined', 'blocked']
+        && validMatchPublicId(data.interestFromPublicId)
+        && data.interestFromPublicId in data.publicIds
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function canCreateMatchPair(data, pairId) {
+      let actorId = ownMatchPublicId();
+      let isInterest = data.status == 'pending'
+        && data.interestFromPublicId == actorId
+        && compatibleActiveMatchPair(data.publicIds[0], data.publicIds[1]);
+      let isDismissal = data.status == 'declined'
+        && data.interestFromPublicId == actorId
+        && data.decidedByPublicId == actorId
+        && data.decidedAt == request.time
+        && compatibleActiveMatchPair(data.publicIds[0], data.publicIds[1]);
+      let targetId =
+        data.publicIds[0] == actorId ? data.publicIds[1] : data.publicIds[0];
+      let isBlock = data.status == 'blocked'
+        && data.interestFromPublicId == actorId
+        && existsAfter(
+          /databases/$(database)/documents/wolvesMatchBlocks/$(actorId)/users/$(targetId)
+        );
+      return matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && get(ownMatchParticipantPath()).data.status == 'active'
+        && validMatchPairData(data, pairId)
+        && actorId in data.publicIds
+        && activeMatchProfile(targetId)
+        && (isInterest || isDismissal || isBlock)
+        && data.createdAt == request.time;
+    }
+
+    function canUpdateMatchPair(data, pairId) {
+      let actorId = ownMatchPublicId();
+      let wasPending = resource.data.status == 'pending';
+      let isRecipient = wasPending
+        && resource.data.interestFromPublicId != actorId;
+      let isDismissal = data.status == 'declined'
+        && data.interestFromPublicId == actorId
+        && data.decidedByPublicId == actorId
+        && data.decidedAt == request.time
+        && resource.data.status in ['pending', 'declined'];
+      let isResponse = isRecipient
+        && data.decidedByPublicId == actorId
+        && data.status in ['mutual', 'declined']
+        && (
+          data.status == 'mutual'
+          && data.mutualAt == request.time
+          || data.status == 'declined'
+          && data.decidedAt == request.time
+        );
+      let isBlock = data.status == 'blocked'
+        && data.interestFromPublicId == actorId
+        && existsAfter(
+          /databases/$(database)/documents/wolvesMatchBlocks/$(actorId)/users/$(data.publicIds[0] == actorId ? data.publicIds[1] : data.publicIds[0])
+        );
+      return matchAccountEligible()
+        && get(ownMatchParticipantPath()).data.status == 'active'
+        && readableMatchPair(resource.data)
+        && validMatchPairData(data, pairId)
+        && data.publicIds == resource.data.publicIds
+        && data.createdAt == resource.data.createdAt
+        && (
+          isDismissal
+          && compatibleActiveMatchPair(data.publicIds[0], data.publicIds[1])
+          || isResponse
+          && compatibleActiveMatchPair(data.publicIds[0], data.publicIds[1])
+          || isBlock
+        );
+    }
+
     match /usernameRegistry/{username} {
       allow get: if request.auth != null;
       allow list: if false;
@@ -543,7 +814,7 @@ service cloud.firestore {
           request.auth != null
           && request.auth.uid == userId
           && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['email', 'displayName', 'birthDate', 'username'])
+            .hasOnly(['email', 'displayName', 'username'])
           && request.resource.data.email == request.auth.token.email
           && (
             !('birthDate' in request.resource.data)
@@ -632,7 +903,9 @@ service cloud.firestore {
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 500
           && request.resource.data.matchProfileId is string
-          && request.resource.data.matchProfileId.matches('^[0-9]{1,8}$')
+          && request.resource.data.matchProfileId.matches(
+            '^[A-Za-z0-9_-]{1,80}$'
+          )
           && request.resource.data.matchName is string
           && request.resource.data.matchName.size() > 0
           && request.resource.data.matchName.size() <= 80
@@ -2895,23 +3168,146 @@ service cloud.firestore {
     }
 
     match /wolvesMatchParticipants/{userId} {
-      allow read, write: if false;
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && matchAccountEligible()
+        && validMatchProfileFields(request.resource.data)
+        && request.resource.data.status in ['configuring', 'active']
+        && existsAfter(matchPublicIdAt(request.resource.data.matchPublicId))
+        && getAfter(matchPublicIdAt(request.resource.data.matchPublicId)).data.uid
+          == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && matchAccountEligible()
+        && validMatchProfileFields(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.matchPublicId == resource.data.matchPublicId
+        && matchProfileOwnedByCurrentUser(resource.data.matchPublicId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'consentAt', 'updatedAt'
+        ]);
+      allow delete: if false;
     }
 
     match /wolvesMatchPublicIds/{publicId} {
-      allow read, write: if false;
+      allow get: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+      allow list: if false;
+      allow create: if matchAccountEligible()
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && existsAfter(ownMatchParticipantPath())
+        && getAfter(ownMatchParticipantPath()).data.matchPublicId == publicId;
+      allow update, delete: if false;
+    }
+
+    match /wolvesMatchPublicProfiles/{publicId} {
+      allow get: if matchAccountEligible()
+        && (
+          ownsMatchPublicId(publicId)
+          ||
+          resource.data.status == 'active'
+          || exists(ownMatchParticipantPath())
+            && matchPairExists(ownMatchPublicId(), publicId)
+        );
+      allow list: if matchAccountEligible()
+        && resource.data.status == 'active';
+      allow create, update: if matchAccountEligible()
+        && validMatchPublicId(publicId)
+        && request.resource.data.keys().hasOnly([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'updatedAt'
+        ])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 2
+        && request.resource.data.displayName.size() <= 40
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 180
+        && !matchTextContainsPrivateContact(
+          request.resource.data.displayName + '\n' + request.resource.data.bio
+        )
+        && validMatchIntention(request.resource.data.intention)
+        && request.resource.data.interests is list
+        && request.resource.data.interests.size() <= 5
+        && request.resource.data.interests.toSet().hasOnly([
+          'Café de especialidad', 'Eventos', 'Música', 'Lectura',
+          'Naturaleza', 'Mascotas', 'Arte', 'Viajes',
+          'Conversaciones', 'Deportes'
+        ])
+        && request.resource.data.status in [
+          'configuring', 'active', 'paused', 'left'
+        ]
+        && request.resource.data.updatedAt == request.time
+        && existsAfter(matchPublicIdAt(publicId))
+        && getAfter(matchPublicIdAt(publicId)).data.uid == request.auth.uid
+        && existsAfter(ownMatchParticipantPath())
+        && getAfter(ownMatchParticipantPath()).data.matchPublicId == publicId
+        && getAfter(ownMatchParticipantPath()).data.status
+          == request.resource.data.status
+        && getAfter(ownMatchParticipantPath()).data.displayName
+          == request.resource.data.displayName
+        && getAfter(ownMatchParticipantPath()).data.bio
+          == request.resource.data.bio
+        && getAfter(ownMatchParticipantPath()).data.intention
+          == request.resource.data.intention
+        && getAfter(ownMatchParticipantPath()).data.interests
+          == request.resource.data.interests;
+      allow delete: if false;
     }
 
     match /wolvesMatchPairs/{pairId} {
-      allow read, write: if false;
+      allow get: if exists(
+          /databases/$(database)/documents/wolvesMatchPairs/$(pairId)
+        )
+          && readableMatchPair(resource.data)
+        || canGetMissingMatchPair(pairId);
+      allow list: if readableMatchPair(resource.data);
+      allow create: if canCreateMatchPair(request.resource.data, pairId);
+      allow update: if canUpdateMatchPair(request.resource.data, pairId);
+      allow delete: if false;
     }
 
     match /wolvesMatchBlocks/{userId}/users/{blockedUserId} {
-      allow read, write: if false;
+      allow get: if matchAccountEligible()
+        && (
+          ownsMatchPublicId(userId)
+          || ownsMatchPublicId(blockedUserId)
+        );
+      allow list: if false;
+      allow create: if ownsMatchPublicId(userId)
+        && matchAccountEligible()
+        && validMatchPublicId(blockedUserId)
+        && request.resource.data.keys().hasOnly(['createdAt'])
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
     }
 
     match /wolvesMatchReports/{reportId} {
-      allow read, write: if false;
+      allow create: if matchAccountEligible()
+        && request.resource.data.keys().hasOnly([
+          'reporterUid', 'targetPublicId', 'reason', 'details',
+          'status', 'createdAt'
+        ])
+        && request.resource.data.reporterUid == request.auth.uid
+        && validMatchPublicId(request.resource.data.targetPublicId)
+        && activeMatchProfile(request.resource.data.targetPublicId)
+        && request.resource.data.reason in [
+          'inappropriate', 'fake', 'harassment', 'other'
+        ]
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 500
+        && request.resource.data.status == 'open'
+        && request.resource.data.createdAt == request.time;
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
     }
 
     match /game_sessions/{sessionId} {

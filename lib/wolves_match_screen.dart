@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'coffee_pup_game_screen.dart';
 import 'interstitial_ads_service.dart';
 import 'mischief_wall_screen.dart';
 import 'wolves_match_service.dart';
@@ -132,28 +130,16 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
   }
 
   String _messageFor(Object error) {
-    if (error is FirebaseFunctionsException) {
-      final serverMessage = error.message?.trim();
-      switch (error.code) {
-        case 'internal':
-          return 'El servidor de WOLVES MATCH tuvo un error. Comprueba que '
-              'las funciones de Firebase estén desplegadas y vuelve a '
-              'intentarlo. Código: ${error.code}.';
-        case 'not-found':
-          return 'No se encontró la función de WOLVES MATCH. Despliega las '
-              'funciones de Firebase y vuelve a intentarlo. Código: '
-              '${error.code}.';
-        case 'unauthenticated':
-          return 'Tu sesión no está activa. Cierra sesión, vuelve a ingresar '
-              'e inténtalo otra vez.';
-        default:
-          if (serverMessage != null && serverMessage.isNotEmpty) {
-            return serverMessage;
-          }
-          return 'No se pudo cargar WOLVES MATCH. Código: ${error.code}.';
-      }
+    final message = error.toString();
+    if (message.startsWith('Bad state: ')) {
+      return message.substring('Bad state: '.length);
     }
-    return 'No se pudo cargar WOLVES MATCH. Revisa tu conexión e inténtalo de nuevo.';
+    if (message.startsWith('Invalid argument(s): ')) {
+      return message.substring('Invalid argument(s): '.length);
+    }
+    return 'No se pudo completar la acción de WOLVES MATCH. '
+        'Revisa tu conexión y las reglas de Firestore e inténtalo de nuevo. '
+        '$message';
   }
 
   String get _status => _state?['status'] as String? ?? 'inactive';
@@ -1206,68 +1192,19 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             FilledButton.icon(
-              onPressed: _saving
-                  ? null
-                  : () => _openCoffeePupGame(
-                        profile['id'] as String,
-                        gameType: 'trivia',
-                      ),
-              style: FilledButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: _background,
-              ),
+              onPressed: null,
               icon: const Icon(Icons.quiz_outlined, size: 18),
-              label: const Text('TRIVIA · CAFÉ Y PERRITOS'),
+              label: const Text('TRIVIA · TEMPORALMENTE DESACTIVADA'),
             ),
             const SizedBox(height: 7),
-            OutlinedButton.icon(
-              onPressed: _saving
-                  ? null
-                  : () => _openCoffeePupGame(
-                        profile['id'] as String,
-                        gameType: 'preferences',
-                      ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _gold,
-                side: const BorderSide(color: _gold),
-              ),
-              icon: const Icon(Icons.favorite_outline, size: 18),
-              label: const Text('¿QUÉ PREFIERES?'),
+            const Text(
+              'Los juegos volverán cuando puedan validarse de forma segura '
+              'sin Cloud Functions.',
+              style: TextStyle(color: _muted, fontSize: 12),
             ),
           ],
         ),
       );
-
-  Future<void> _openCoffeePupGame(
-    String profileId, {
-    required String gameType,
-  }) async {
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      final sessionId = await _service.startCoffeePupGame(
-        profileId: profileId,
-        gameType: gameType,
-      );
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => CoffeePupGameScreen(sessionId: sessionId),
-        ),
-      );
-      if (!mounted) return;
-      await InterstitialAdsService.showBeforeLeaving();
-      if (!mounted) return;
-      await _loadState();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = _messageFor(error));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
 
   Widget _profileCard(
     Map<String, dynamic> profile, {

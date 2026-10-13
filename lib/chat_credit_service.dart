@@ -58,7 +58,7 @@ class ChatCreditService {
         !RegExp(r'^[A-Za-z0-9_-]{8,80}$').hasMatch(messageId) ||
         normalizedText.isEmpty ||
         normalizedText.length > 500 ||
-        !RegExp(r'^\d{1,8}$').hasMatch(matchProfileId) ||
+        !RegExp(r'^[A-Za-z0-9_-]{1,80}$').hasMatch(matchProfileId) ||
         normalizedName.isEmpty ||
         normalizedName.length > 80) {
       throw ArgumentError('El mensaje no es válido.');
