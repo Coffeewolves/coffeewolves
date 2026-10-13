@@ -4593,6 +4593,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   String page = 'splash';
   String previousPage = 'home';
+  final List<String> _pageHistory = [];
   String _menuReturnPage = 'home';
   String _menuReturnPreviousPage = 'home';
   bool _musicEnabled = true;
@@ -5142,6 +5143,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _menuReturnPage = page;
       _menuReturnPreviousPage = previousPage;
     }
+    _recordCurrentPageForBack(destination);
     setState(() {
       previousPage = page;
       page = destination;
@@ -5155,18 +5157,45 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         _splashController.status != AnimationStatus.completed) {
       return;
     }
+    final currentPage = page;
+    var destination = previousPage;
+    while (_pageHistory.isNotEmpty) {
+      final candidate = _pageHistory.removeLast();
+      if (candidate != currentPage) {
+        destination = candidate;
+        break;
+      }
+    }
+    if (destination == currentPage) destination = 'home';
     setState(() {
-      page = previousPage;
+      previousPage = currentPage;
+      page = destination;
     });
+  }
+
+  void _recordCurrentPageForBack(String destination) {
+    if (destination == page) return;
+    _pageHistory.add(page);
+    if (_pageHistory.length > 50) _pageHistory.removeAt(0);
   }
 
   void _closeSideMenu() {
     final destination = _menuReturnPage == 'menu' ? 'home' : _menuReturnPage;
     if (destination == page) return;
+    while (_pageHistory.isNotEmpty && _pageHistory.last == 'menu') {
+      _pageHistory.removeLast();
+    }
+    if (_pageHistory.isNotEmpty && _pageHistory.last == destination) {
+      _pageHistory.removeLast();
+    }
     setState(() {
       page = destination;
       previousPage =
-          _menuReturnPreviousPage == 'menu' ? 'home' : _menuReturnPreviousPage;
+          _pageHistory.isEmpty
+              ? (_menuReturnPreviousPage == 'menu'
+                  ? 'home'
+                  : _menuReturnPreviousPage)
+              : _pageHistory.last;
     });
   }
 
@@ -5263,14 +5292,17 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         _debugRoleBypassActive = debugRoleBypassActive;
         if (const {'barista', 'cajero'}.contains(authorizedRole) &&
             page != 'plushAuthenticity') {
+          _pageHistory.clear();
           page = 'pos';
         }
         if (authorizedRole == 'admin' && page != 'plushAuthenticity') {
+          _pageHistory.clear();
           page = 'admin';
         }
         if (authorizedRole == 'user' &&
             page != 'splash' &&
             page != 'plushAuthenticity') {
+          _pageHistory.clear();
           page = 'home';
         }
       });
@@ -7493,6 +7525,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             _adminFinanceUnlocked = false;
             page = 'pos';
           }
+          _pageHistory.clear();
           previousPage = page;
         });
         _subscribeCafeCatalog();
@@ -7625,6 +7658,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _adminFinanceUnlocked = false;
       unawaited(_signOut());
       setState(() {
+        _pageHistory.clear();
         page = 'login';
         previousPage = 'login';
       });
@@ -8545,6 +8579,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _adminPosAccessEnabled = false;
       if (!mounted) return;
       setState(() {
+        _pageHistory.clear();
         page = 'admin';
         previousPage = 'admin';
       });
@@ -9659,6 +9694,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         }
       }
       setState(() {
+        _recordCurrentPageForBack('plushAuthenticity');
         _publicAuthenticityCode = code;
         previousPage = page;
         page = 'plushAuthenticity';
@@ -9703,8 +9739,14 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           );
         }
         if (!snapshot.hasData) {
-          return const Center(
-            child: CircularProgressIndicator(color: gold),
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _topBar(title: 'VERIFICACIÓN DE AUTENTICIDAD'),
+                const CircularProgressIndicator(color: gold),
+              ],
+            ),
           );
         }
         final record = snapshot.data!;
@@ -9763,24 +9805,29 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         padding: const EdgeInsets.all(22),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: card,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: valid ? gold : const Color(0xFFE6A296)),
-            ),
-            child: Column(
-              children: [
-                if (valid && modelCode != null) ...[
-                  _collectibleFigureImage(
-                    modelCode: modelCode,
-                    inColor: isAdopted,
-                    size: 190,
-                  ),
-                  const SizedBox(height: 16),
-                ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _topBar(title: 'VERIFICACIÓN DE AUTENTICIDAD'),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: card,
+                  borderRadius: BorderRadius.circular(18),
+                  border:
+                      Border.all(color: valid ? gold : const Color(0xFFE6A296)),
+                ),
+                child: Column(
+                  children: [
+                    if (valid && modelCode != null) ...[
+                      _collectibleFigureImage(
+                        modelCode: modelCode,
+                        inColor: isAdopted,
+                        size: 190,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                 const Text(
                   'COFFEE WOLVES · AUTHENTICITY CHECK',
                   textAlign: TextAlign.center,
@@ -9833,8 +9880,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   textAlign: TextAlign.center,
                   style: TextStyle(color: muted, fontSize: 10),
                 ),
-              ],
-            ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -11890,7 +11939,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         );
 
       case 'mischiefWall':
-        return MischiefWallScreen(onClose: () => go(previousPage));
+        return MischiefWallScreen(onClose: back);
 
       case 'dateConfirmation':
         return _dateConfirmation();
@@ -11978,16 +12027,19 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   Widget _topBar({
     String title = 'WOLVES CLUB',
-    bool backButton = false,
+    bool? backButton,
     bool menuButton = true,
     VoidCallback? onBack,
   }) {
+    final showBackButton =
+        backButton ?? (page != 'home' || _pageHistory.isNotEmpty);
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
       child: Row(
         children: [
-          if (backButton)
+          if (showBackButton)
             IconButton(
+              tooltip: 'Volver atrás',
               onPressed: onBack ?? back,
               icon: const Icon(Icons.arrow_back_ios_new, size: 18),
               color: white,
@@ -23300,6 +23352,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   void _startMatch() {
     setState(() {
+      _recordCurrentPageForBack('wolvesMatch');
       previousPage = page;
       page = 'wolvesMatch';
     });
@@ -23307,6 +23360,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   void _beginMatchQuiz(String intent) {
     setState(() {
+      _recordCurrentPageForBack('match');
       _matchIntent = intent;
       page = 'match';
       quizAnswers.clear();
@@ -23329,6 +23383,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
     setState(() {
       selectedMatchIndex = _recommendedMatchIndex();
+      _recordCurrentPageForBack('matchProfiles');
       previousPage = page;
       page = 'matchProfiles';
     });
@@ -23371,6 +23426,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       }
       matchRewardGranted = true;
       currentMatchRewardGranted = rewardGranted;
+      _recordCurrentPageForBack('matchCelebration');
       previousPage = page;
       page = 'matchCelebration';
     });
@@ -23679,8 +23735,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _topBar(
-                title: '¡NUEVO MATCH!', backButton: false, menuButton: false),
+            _topBar(title: '¡NUEVO MATCH!', menuButton: false),
             const SizedBox(height: 30),
             const Icon(Icons.celebration, color: gold, size: 82),
             const SizedBox(height: 20),
@@ -23924,6 +23979,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     setState(() {
       xp += 200;
       dateRewardGranted = true;
+      _recordCurrentPageForBack('dateConfirmation');
       previousPage = page;
       page = 'dateConfirmation';
     });
@@ -24102,8 +24158,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _topBar(
-                title: 'CITA CONFIRMADA', backButton: false, menuButton: false),
+            _topBar(title: 'CITA CONFIRMADA', menuButton: false),
             const SizedBox(height: 34),
             const Row(
               mainAxisAlignment: MainAxisAlignment.center,

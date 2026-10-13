@@ -58,6 +58,10 @@ void main() {
       expect(album, hasLength(33));
       expect(cups, hasLength(27));
       expect(plushes, hasLength(6));
+      expect(
+        collectibleAlbumBreeds.map((breed) => breed.name),
+        ['Pomeranian', 'Samoyed', 'Husky'],
+      );
       for (final breed in collectibleAlbumBreeds) {
         expect(
           cups.where((entry) => entry.breedId == breed.id),

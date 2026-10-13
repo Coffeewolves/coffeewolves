@@ -57,8 +57,8 @@ class CollectibleAlbumEntry {
 }
 
 const collectibleAlbumBreeds = <({String id, String name, String cupCode})>[
-  (id: 'pomi', name: 'Pomerania · Pomi', cupCode: 'CW-CUP-007'),
-  (id: 'samoyed', name: 'Samoyedo', cupCode: 'CW-CUP-008'),
+  (id: 'pomi', name: 'Pomeranian', cupCode: 'CW-CUP-007'),
+  (id: 'samoyed', name: 'Samoyed', cupCode: 'CW-CUP-008'),
   (id: 'husky', name: 'Husky', cupCode: 'CW-CUP-009'),
 ];
 
