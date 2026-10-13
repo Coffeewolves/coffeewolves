@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#171411">
+    <meta
+      name="description"
+      content="Contacta al equipo de soporte de Coffee Wolves."
+    >
+    <title>Soporte · Coffee Wolves</title>
+    <link rel="stylesheet" href="support-form.css">
+    <script type="module" src="support-form.js"></script>
+  </head>
+  <body>
+    <main class="page-shell">
+      <a class="back-link" href="./" aria-label="Volver a Coffee Wolves">
+        <span aria-hidden="true">←</span>
+        Volver a Coffee Wolves
+      </a>
+
+      <section class="support-card" aria-labelledby="page-title">
+        <div class="brand-mark" aria-hidden="true">CW</div>
+        <p class="eyebrow">COFFEE WOLVES · ATENCIÓN AL CLIENTE</p>
+        <h1 id="page-title">¿Cómo podemos ayudarte?</h1>
+        <p class="intro">
+          Cuéntanos qué pasó. Gerencia revisará tu caso y podrás consultar su
+          estado desde tu cuenta.
+        </p>
+
+        <div id="auth-notice" class="notice" role="status">
+          Comprobando tu sesión…
+        </div>
+
+        <form id="support-form" novalidate>
+          <div class="field">
+            <label for="category">Sección relacionada <span>*</span></label>
+            <select id="category" name="supportCategory" required>
+              <option value="" selected disabled>Selecciona una sección</option>
+              <option>Mi Bitácora</option>
+              <option>Wolves Member Card</option>
+              <option>Billetera</option>
+              <option>Mis Coleccionables</option>
+              <option>Álbum Cold Brew</option>
+              <option>Mis Mascotas</option>
+              <option>Mis Pedidos</option>
+              <option>Otro</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="subject">Asunto <span>*</span></label>
+            <input
+              id="subject"
+              name="subject"
+              type="text"
+              minlength="4"
+              maxlength="120"
+              placeholder="Resume tu consulta en una frase"
+              autocomplete="off"
+              required
+            >
+            <small>Entre 4 y 120 caracteres.</small>
+          </div>
+
+          <div class="field">
+            <label for="details">Descripción <span>*</span></label>
+            <textarea
+              id="details"
+              name="details"
+              rows="6"
+              minlength="10"
+              maxlength="2000"
+              placeholder="Describe lo ocurrido y qué solución necesitas…"
+              required
+            ></textarea>
+            <small>Entre 10 y 2000 caracteres.</small>
+          </div>
+
+          <div class="field">
+            <label for="user-id">ID de usuario</label>
+            <input
+              id="user-id"
+              name="customerUid"
+              type="text"
+              placeholder="Se completa al iniciar sesión"
+              readonly
+            >
+            <small>Se asigna automáticamente a tu cuenta.</small>
+          </div>
+
+          <div class="field">
+            <label for="screenshot">Captura de pantalla <span class="optional">(opcional)</span></label>
+            <label class="upload-box" for="screenshot">
+              <span class="upload-icon" aria-hidden="true">↥</span>
+              <span id="file-label">Selecciona una imagen JPG, PNG o WebP</span>
+              <input
+                id="screenshot"
+                name="screenshot"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+              >
+            </label>
+            <small>La imagen se optimiza antes de adjuntarla.</small>
+            <img id="image-preview" class="image-preview" alt="Vista previa de la captura">
+          </div>
+
+          <p id="form-message" class="form-message" role="status" aria-live="polite"></p>
+
+          <button id="submit-button" class="submit-button" type="submit" disabled>
+            <span class="button-label">Enviar a soporte</span>
+            <span class="button-arrow" aria-hidden="true">→</span>
+          </button>
+          <p class="privacy-note">
+            Tu caso solo será visible para ti y el equipo autorizado de Gerencia.
+          </p>
+        </form>
+
+        <section id="receipt" class="receipt" hidden aria-live="polite">
+          <div class="receipt-check" aria-hidden="true">✓</div>
+          <h2>Recibimos tu mensaje</h2>
+          <p>Gerencia revisará tu caso. Guarda este número para identificarlo:</p>
+          <code id="case-id"></code>
+          <button id="new-case" class="secondary-button" type="button">
+            Enviar otro mensaje
+          </button>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

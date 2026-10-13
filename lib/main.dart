@@ -4175,6 +4175,26 @@ Uint8List _compressCafeImageBytes(Uint8List sourceBytes) {
   );
 }
 
+Uint8List _compressSupportScreenshotBytes(Uint8List sourceBytes) {
+  final decoded = image_codec.decodeImage(sourceBytes);
+  if (decoded == null) {
+    throw const FormatException('El archivo seleccionado no es una imagen.');
+  }
+  final scale = min(1.0, min(1200 / decoded.width, 1200 / decoded.height));
+  final resized = image_codec.copyResize(
+    decoded,
+    width: max(1, (decoded.width * scale).round()),
+    height: max(1, (decoded.height * scale).round()),
+  );
+  for (final quality in [76, 64, 52, 40, 30]) {
+    final jpegBytes = image_codec.encodeJpg(resized, quality: quality);
+    if (jpegBytes.length <= 400000) return Uint8List.fromList(jpegBytes);
+  }
+  throw ArgumentError(
+    'La captura es demasiado grande incluso después de optimizarla.',
+  );
+}
+
 const _officialCafeProducts = <_OfficialCafeProduct>[
   _OfficialCafeProduct('Cold Brew', 'Brewing', 40,
       'Café destilado en frío (24 hrs), ligero, con sabores intensos.'),
@@ -6754,7 +6774,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }) async {
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
-    final displayNameController = TextEditingController();
+    final firstNameController = TextEditingController();
+    final lastNameController = TextEditingController();
     final usernameController = TextEditingController();
     DateTime? requestedBirthDate;
     String? authenticatedStaffUid;
@@ -6816,13 +6837,16 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       if (isRequestingAccount && requestSubmitted) return;
       if (isRequestingAccount &&
           (password.length < 8 ||
-              displayNameController.text.trim().isEmpty ||
+              firstNameController.text.trim().isEmpty ||
+              lastNameController.text.trim().isEmpty ||
+              firstNameController.text.trim().length > 60 ||
+              lastNameController.text.trim().length > 60 ||
               UsernameRegistryService.validate(usernameController.text) !=
                   null)) {
         setDialogState(
           () => errorMessage =
-              'Ingresa tu nombre, un Username válido y una contraseña de al '
-                  'menos 8 caracteres.',
+              'Ingresa nombre y apellido, un Username válido y una contraseña '
+              'de al menos 8 caracteres.',
         );
         return;
       }
@@ -6902,7 +6926,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             final existingRequest = await transaction.get(requestReference);
             final requestData = {
               'email': refreshedStaffUser.email,
-              'displayName': displayNameController.text.trim(),
+              'displayName':
+                  '${firstNameController.text.trim()} ${lastNameController.text.trim()}',
               'username': usernameController.text.trim(),
               'birthDate': formatBirthDate(requestedBirthDate!),
               'requestedRole': requestedRole,
@@ -7142,10 +7167,19 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     ],
                     if (isRequestingAccount) ...[
                       TextField(
-                        controller: displayNameController,
+                        controller: firstNameController,
                         textCapitalization: TextCapitalization.words,
                         decoration: const InputDecoration(
-                          labelText: 'Nombre completo',
+                          labelText: 'Nombre *',
+                          prefixIcon: Icon(Icons.badge_outlined),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: lastNameController,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(
+                          labelText: 'Apellido *',
                           prefixIcon: Icon(Icons.badge_outlined),
                         ),
                       ),
@@ -7493,7 +7527,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       await staffDialogRoute?.completed;
       emailController.dispose();
       passwordController.dispose();
-      displayNameController.dispose();
+      firstNameController.dispose();
+      lastNameController.dispose();
       usernameController.dispose();
       if (mounted) {
         setState(() {
@@ -18620,6 +18655,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         final orderId = data['orderId'] as String?;
                         final customerEmail = data['customerEmail'] as String?;
                         final customerUid = data['customerUid'] as String?;
+                        final attachmentBase64 =
+                            data['attachmentBase64'] as String?;
+                        final attachmentName =
+                            data['attachmentName'] as String?;
                         final status = data['status'] as String?;
                         final safeStatus = const {
                           'new',
@@ -18641,7 +18680,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Text(
-                                '$feedbackType · ${data['incident'] ?? 'Otro'} · '
+                                '$feedbackType · '
+                                '${data['supportCategory'] ?? data['incident'] ?? 'Otro'} · '
                                 'Turno ${_staffShiftLabel(data['shift'] as String?).toLowerCase()}',
                                 style: const TextStyle(
                                   color: cream,
@@ -18650,6 +18690,19 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                                 ),
                               ),
                               const SizedBox(height: 5),
+                              if ((data['subject'] as String?)?.isNotEmpty ==
+                                  true)
+                                Text(
+                                  data['subject'] as String,
+                                  style: const TextStyle(
+                                    color: cream,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              if ((data['subject'] as String?)?.isNotEmpty ==
+                                  true)
+                                const SizedBox(height: 5),
                               Text(
                                 data['details'] as String? ?? '',
                                 style: const TextStyle(
@@ -18669,6 +18722,26 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                                     color: cream2,
                                     fontSize: 9,
                                     height: 1.4,
+                                  ),
+                                ),
+                              ],
+                              if (attachmentBase64?.isNotEmpty == true) ...[
+                                const SizedBox(height: 6),
+                                TextButton.icon(
+                                  onPressed: () => unawaited(
+                                    _showSupportScreenshot(
+                                      attachmentBase64!,
+                                      attachmentName,
+                                    ),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.image_outlined,
+                                    size: 16,
+                                  ),
+                                  label: const Text('VER CAPTURA ADJUNTA'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: gold,
+                                    alignment: Alignment.centerLeft,
                                   ),
                                 ),
                               ],
@@ -27816,13 +27889,25 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          '$feedbackLabel · $statusLabel',
+                          '$feedbackLabel · '
+                          '${data['supportCategory'] ?? 'General'} · '
+                          '$statusLabel',
                           style: const TextStyle(
                             color: gold,
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
+                        const SizedBox(height: 5),
+                        if ((data['subject'] as String?)?.isNotEmpty == true)
+                          Text(
+                            data['subject'] as String,
+                            style: const TextStyle(
+                              color: cream,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         const SizedBox(height: 5),
                         Text(
                           data['details'] as String? ?? '',
@@ -27912,6 +27997,50 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     );
   }
 
+  Future<void> _showSupportScreenshot(
+    String base64Image,
+    String? imageName,
+  ) async {
+    try {
+      final bytes = base64Decode(base64Image);
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: card,
+          title: Text(
+            imageName?.isNotEmpty == true
+                ? imageName!
+                : 'Captura adjunta',
+            style: const TextStyle(color: cream, fontSize: 14),
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640, maxHeight: 520),
+            child: InteractiveViewer(
+              child: Image.memory(
+                bytes,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => const Text(
+                  'No se pudo mostrar la imagen adjunta.',
+                  style: TextStyle(color: muted),
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('CERRAR'),
+            ),
+          ],
+        ),
+      );
+    } on FormatException catch (error, stackTrace) {
+      debugPrint('La captura de soporte no tiene formato Base64 válido: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _showSnackBar('No se pudo abrir la captura adjunta.');
+    }
+  }
+
   Future<void> _showCustomerComplaintForm() async {
     final user = _firebaseUser;
     if (user?.email == null) {
@@ -27920,12 +28049,50 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       return;
     }
     final detailsController = TextEditingController();
+    final subjectController = TextEditingController();
     final orderController = TextEditingController();
     var selectedShift = 'morning';
     var selectedFeedbackType = 'complaint';
     var selectedIncident = 'Atención';
+    var selectedSupportCategory = 'Mi Bitácora';
+    Uint8List? screenshotBytes;
+    String? screenshotName;
     var isSubmitting = false;
     String? errorMessage;
+
+    Future<void> selectSupportScreenshot(
+      BuildContext dialogContext,
+      StateSetter setDialogState,
+    ) async {
+      try {
+        final selectedImage = await _cafeImagePicker.pickImage(
+          source: ImageSource.gallery,
+          imageQuality: 90,
+          maxWidth: 1600,
+          maxHeight: 1600,
+        );
+        if (selectedImage == null || !dialogContext.mounted) return;
+        final originalBytes = await selectedImage.readAsBytes();
+        final compressedBytes =
+            await compute(_compressSupportScreenshotBytes, originalBytes);
+        if (!dialogContext.mounted) return;
+        setDialogState(() {
+          screenshotBytes = compressedBytes;
+          screenshotName = selectedImage.name;
+          errorMessage = null;
+        });
+      } catch (error, stackTrace) {
+        debugPrint('No se pudo adjuntar la captura de soporte: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (dialogContext.mounted) {
+          setDialogState(() {
+            errorMessage =
+                'No se pudo preparar la captura. Elige una imagen más pequeña.';
+          });
+        }
+      }
+    }
+
     try {
       await showDialog<void>(
         context: context,
@@ -27959,6 +28126,61 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     'Al enviar recibirás una confirmación automática. Gerencia podrá revisar y actualizar el estado de tu caso.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: muted, fontSize: 10, height: 1.4),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: selectedSupportCategory,
+                    dropdownColor: card2,
+                    decoration: const InputDecoration(
+                      labelText: 'Sección relacionada',
+                    ),
+                    items: const [
+                      'Mi Bitácora',
+                      'Wolves Member Card',
+                      'Billetera',
+                      'Mis Coleccionables',
+                      'Álbum Cold Brew',
+                      'Mis Mascotas',
+                      'Mis Pedidos',
+                      'Otro',
+                    ]
+                        .map(
+                          (category) => DropdownMenuItem(
+                            value: category,
+                            child: Text(category),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: isSubmitting
+                        ? null
+                        : (value) {
+                            if (value != null) {
+                              setDialogState(
+                                () => selectedSupportCategory = value,
+                              );
+                            }
+                          },
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: subjectController,
+                    enabled: !isSubmitting,
+                    maxLength: 120,
+                    decoration: const InputDecoration(
+                      labelText: 'Asunto',
+                      hintText: 'Resume tu consulta en una frase',
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'ID de usuario',
+                      prefixIcon: Icon(Icons.badge_outlined),
+                    ),
+                    child: SelectableText(
+                      user!.uid,
+                      style: const TextStyle(color: muted, fontSize: 12),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
@@ -28055,6 +28277,42 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     ),
                   ),
                   const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: isSubmitting
+                        ? null
+                        : () => selectSupportScreenshot(
+                              dialogContext,
+                              setDialogState,
+                            ),
+                    icon: const Icon(Icons.attach_file),
+                    label: Text(
+                      screenshotName == null
+                          ? 'Adjuntar captura opcional'
+                          : 'Cambiar captura · $screenshotName',
+                    ),
+                  ),
+                  if (screenshotBytes != null) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.memory(
+                        screenshotBytes!,
+                        height: 130,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: isSubmitting
+                          ? null
+                          : () => setDialogState(() {
+                                screenshotBytes = null;
+                                screenshotName = null;
+                              }),
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: const Text('Quitar captura'),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
                   TextField(
                     controller: detailsController,
                     enabled: !isSubmitting,
@@ -28085,6 +28343,14 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     ? null
                     : () async {
                         final details = detailsController.text.trim();
+                        final subject = subjectController.text.trim();
+                        if (subject.length < 4) {
+                          setDialogState(
+                            () => errorMessage =
+                                'Escribe un asunto de al menos 4 caracteres.',
+                          );
+                          return;
+                        }
                         if (details.length < 10) {
                           setDialogState(
                             () => errorMessage =
@@ -28099,13 +28365,24 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         try {
                           final caseId =
                               await _businessOperationsService.submitComplaint(
-                            customerUid: user!.uid,
+                            customerUid: user.uid,
                             customerEmail: user.email!,
                             shift: selectedShift,
                             feedbackType: selectedFeedbackType,
                             incident: selectedIncident,
+                            supportCategory: selectedSupportCategory,
+                            subject: subject,
                             details: details,
                             orderId: orderController.text,
+                            attachmentBase64: screenshotBytes == null
+                                ? null
+                                : base64Encode(screenshotBytes!),
+                            attachmentName: screenshotName == null
+                                ? null
+                                : '${screenshotName!.substring(
+                                    0,
+                                    min(screenshotName!.length, 116),
+                                  )}.jpg',
                           );
                           final autoReply =
                               customerComplaintAutoReply(selectedFeedbackType);
@@ -28146,6 +28423,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       );
     } finally {
       detailsController.dispose();
+      subjectController.dispose();
       orderController.dispose();
     }
   }

@@ -70,7 +70,8 @@ class ProfileAuthForm extends StatefulWidget {
 
 class _ProfileAuthFormState extends State<ProfileAuthForm> {
   final _formKey = GlobalKey<FormState>();
-  final _fullNameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -86,7 +87,6 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
   bool _isLoading = false;
   bool _passwordVisible = false;
   bool _authCallbackSent = false;
-  bool _birthdaySyncFailed = false;
   String? _errorMessage;
 
   static const _gold = Color(0xFFC6A06A);
@@ -141,7 +141,8 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
     if (password.isEmpty) return false;
     if (!_hasEmailAddress(email)) return false;
     if (!_isRegistering) return true;
-    return _validateFullName(_fullNameController.text) == null &&
+    return _validatePersonName(_firstNameController.text, 'nombre') == null &&
+        _validatePersonName(_lastNameController.text, 'apellido') == null &&
         _validateUsername(_usernameController.text) == null &&
         _isAdult &&
         password.length >= 8;
@@ -151,13 +152,18 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
   void initState() {
     super.initState();
     _mode = widget.initialMode;
-    _fullNameController.text = _currentUser?.displayName ?? '';
+    final displayName = _currentUser?.displayName?.trim() ?? '';
+    final nameParts = displayName.split(RegExp(r'\s+'));
+    _firstNameController.text = nameParts.isEmpty ? '' : nameParts.first;
+    _lastNameController.text =
+        nameParts.length > 1 ? nameParts.skip(1).join(' ') : '';
     if (_isRegistering) _emailController.text = _currentUser?.email ?? '';
   }
 
   @override
   void dispose() {
-    _fullNameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _usernameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
@@ -198,12 +204,10 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
     return null;
   }
 
-  String? _validateFullName(String? value) {
-    final fullName = value?.trim() ?? '';
-    final nameParts = fullName.split(RegExp(r'\s+'));
-    if (fullName.length > 80 || nameParts.length < 2) {
-      return 'Ingresa tu nombre y apellido.';
-    }
+  String? _validatePersonName(String? value, String label) {
+    final name = value?.trim() ?? '';
+    if (name.isEmpty) return 'El $label es obligatorio.';
+    if (name.length > 60) return 'El $label no puede superar 60 caracteres.';
     return null;
   }
 
@@ -295,8 +299,79 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
   Future<void> _saveBirthdayConsent(
     DateTime birthDate,
     bool consent,
-  ) =>
-      _saveBirthdayDetails(birthDate, consent);
+  ) async {
+    final user = _currentUser;
+    if (user == null || !user.emailVerified) {
+      setState(() {
+        _errorMessage = 'Verifica tu correo para cambiar esta preferencia.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final profileReference =
+          FirebaseFirestore.instance.collection('users').doc(user.uid);
+      await FirebaseFirestore.instance.runTransaction<void>((transaction) async {
+        final profile = await transaction.get(profileReference);
+        if (!profile.exists) {
+          throw StateError('No se encontró tu perfil de Coffee Wolves.');
+        }
+        final data = profile.data()!;
+        final storedBirthDate =
+            _dateFromStoredValue(data['birthDate'] ?? data['dateOfBirth']);
+        if (storedBirthDate == null ||
+            storedBirthDate.year != birthDate.year ||
+            storedBirthDate.month != birthDate.month ||
+            storedBirthDate.day != birthDate.day) {
+          throw StateError(
+            'La fecha de nacimiento del perfil cambió. Actualiza el perfil e inténtalo de nuevo.',
+          );
+        }
+        transaction.update(profileReference, {
+          'birthdayMarketingConsent': consent,
+          'birthdayConsentUpdatedAt': FieldValue.serverTimestamp(),
+        });
+      });
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _birthdayMarketingConsent = consent;
+        _errorMessage = consent
+            ? 'Aceptaste recibir la invitación de cumpleaños.'
+            : 'Retiraste tu consentimiento para la invitación de cumpleaños.';
+      });
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint(
+        'No se pudo guardar el consentimiento de cumpleaños: ${error.code}',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage =
+            'No se pudo guardar el consentimiento (${error.code}). Inténtalo de nuevo.';
+      });
+    } on StateError catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = error.message;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Error al guardar el consentimiento de cumpleaños: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage =
+            'No se pudo guardar el consentimiento de cumpleaños.';
+      });
+    }
+  }
 
   Future<void> _saveBirthdayDetails(
     DateTime birthDate,
@@ -317,25 +392,26 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       setState(() {
         _isLoading = false;
         _birthdayMarketingConsent = marketingConsent;
-        _errorMessage = 'Fecha y preferencias de cumpleaños guardadas.';
+        _errorMessage = 'Fecha de nacimiento guardada.';
       });
     } on FirebaseFunctionsException catch (error, stackTrace) {
       debugPrint(
-          'No se pudieron guardar los datos de cumpleaños: ${error.code}');
+        'No se pudo guardar la fecha de nacimiento: ${error.code}',
+      );
       debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = error.message ??
-            'No se pudieron guardar los datos de cumpleaños (${error.code}).';
+        _errorMessage =
+            'No se pudo guardar la fecha de nacimiento (${error.code}).';
       });
     } catch (error, stackTrace) {
-      debugPrint('Error al guardar los datos de cumpleaños: $error');
+      debugPrint('Error al guardar la fecha de nacimiento: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _errorMessage = 'No se pudieron guardar los datos de cumpleaños.';
+        _errorMessage = 'No se pudo guardar la fecha de nacimiento.';
       });
     }
   }
@@ -540,7 +616,6 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
     setState(() {
       _isLoading = true;
       _authCallbackSent = false;
-      _birthdaySyncFailed = false;
       _errorMessage = null;
     });
 
@@ -576,6 +651,9 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       }
 
       if (_isRegistering) {
+        final firstName = _firstNameController.text.trim();
+        final lastName = _lastNameController.text.trim();
+        final fullName = '$firstName $lastName';
         final firestore = FirebaseFirestore.instance;
         final userReference = firestore.collection('users').doc(user.uid);
         try {
@@ -583,7 +661,11 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
             final existingProfile = await transaction.get(userReference);
             final profileData = {
               'email': user.email,
-              'displayName': _fullNameController.text.trim(),
+              'displayName': fullName,
+              'firstName': firstName,
+              'lastName': lastName,
+              'birthdayMarketingConsent': _birthdayMarketingConsent,
+              'birthdayConsentUpdatedAt': FieldValue.serverTimestamp(),
               'username': _usernameController.text.trim(),
               'role': 'user',
               'birthDate': _formatBirthDateForStorage(_birthDate!),
@@ -611,7 +693,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
           await user.delete();
           rethrow;
         }
-        await user.updateDisplayName(_fullNameController.text.trim());
+        await user.updateDisplayName(fullName);
         await user.reload();
         final registeredUser = FirebaseAuth.instance.currentUser ?? user;
         try {
@@ -623,20 +705,6 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
             'verificación (${error.code}).',
           );
           debugPrintStack(stackTrace: stackTrace);
-        }
-        try {
-          await FirebaseFunctions.instanceFor(region: 'us-central1')
-              .httpsCallable('saveBirthdayDetails')
-              .call({
-            'birthDate': _formatBirthDateForStorage(_birthDate!),
-            'birthdayMarketingConsent': _birthdayMarketingConsent,
-          });
-        } on FirebaseFunctionsException catch (error, stackTrace) {
-          debugPrint(
-            'No se pudieron completar los datos de cumpleaños: ${error.code}',
-          );
-          debugPrintStack(stackTrace: stackTrace);
-          _birthdaySyncFailed = true;
         }
       }
 
@@ -663,13 +731,6 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
           });
         }
         return;
-      }
-      if (_isRegistering && _birthdaySyncFailed && mounted) {
-        setState(() {
-          _errorMessage =
-              'Tu cuenta se creó, pero no se pudo guardar la preferencia de '
-              'cumpleaños. Podrás configurarla en tu perfil.';
-        });
       }
       _completeAuthentication(refreshedUser);
     } on UsernameAlreadyTakenException catch (error) {
@@ -1259,18 +1320,32 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
             ),
             const SizedBox(height: 16),
             TextFormField(
-              controller: _fullNameController,
+              controller: _firstNameController,
               enabled: !_isLoading,
               textCapitalization: TextCapitalization.words,
               textInputAction: TextInputAction.next,
-              autofillHints: const [AutofillHints.name],
+              autofillHints: const [AutofillHints.givenName],
               style: const TextStyle(color: _cream),
               decoration: inputDecoration.copyWith(
-                labelText: 'Nombre y apellido',
+                labelText: 'Nombre *',
                 prefixIcon: const Icon(Icons.badge_outlined),
-                helperText: 'Escribe tu nombre y al menos un apellido.',
               ),
-              validator: _validateFullName,
+              validator: (value) => _validatePersonName(value, 'nombre'),
+              onChanged: _refreshSubmitButton,
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _lastNameController,
+              enabled: !_isLoading,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.familyName],
+              style: const TextStyle(color: _cream),
+              decoration: inputDecoration.copyWith(
+                labelText: 'Apellido *',
+                prefixIcon: const Icon(Icons.badge_outlined),
+              ),
+              validator: (value) => _validatePersonName(value, 'apellido'),
               onChanged: _refreshSubmitButton,
             ),
             const SizedBox(height: 14),

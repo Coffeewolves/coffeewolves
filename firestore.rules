@@ -826,7 +826,9 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.auth.uid == userId
         && request.resource.data.keys().hasOnly([
-          'email', 'displayName', 'username', 'role', 'createdAt', 'birthDate', 'isVerified',
+          'email', 'displayName', 'firstName', 'lastName', 'username',
+          'role', 'createdAt', 'birthDate', 'isVerified',
+          'birthdayMarketingConsent', 'birthdayConsentUpdatedAt',
           'phoneNumber', 'phoneCountryCode', 'phoneCountryIsoCode',
           'phoneNationalNumber', 'phoneVerified', 'messageCredits',
           'messageCreditsUpdatedAt'
@@ -839,6 +841,12 @@ service cloud.firestore {
         && request.resource.data.displayName is string
         && request.resource.data.createdAt == request.time
         && (
+          !('birthdayMarketingConsent' in request.resource.data)
+          && !('birthdayConsentUpdatedAt' in request.resource.data)
+          || request.resource.data.birthdayMarketingConsent is bool
+            && request.resource.data.birthdayConsentUpdatedAt == request.time
+        )
+        && (
           !('messageCredits' in request.resource.data)
           && !('messageCreditsUpdatedAt' in request.resource.data)
           || request.resource.data.messageCredits is int
@@ -849,10 +857,23 @@ service cloud.firestore {
           request.auth.token.firebase.sign_in_provider == 'anonymous'
           || (
             request.resource.data.keys().hasAll([
-              'username', 'role', 'birthDate', 'phoneNumber', 'phoneCountryCode',
-              'phoneCountryIsoCode', 'phoneNationalNumber', 'phoneVerified'
+              'firstName', 'lastName', 'username', 'role', 'birthDate',
+              'phoneNumber', 'phoneCountryCode', 'phoneCountryIsoCode',
+              'phoneNationalNumber', 'phoneVerified',
+              'birthdayMarketingConsent', 'birthdayConsentUpdatedAt'
             ])
             && request.resource.data.role == 'user'
+            && request.resource.data.firstName is string
+            && request.resource.data.firstName.size() > 0
+            && request.resource.data.firstName.size() <= 60
+            && request.resource.data.lastName is string
+            && request.resource.data.lastName.size() > 0
+            && request.resource.data.lastName.size() <= 60
+            && request.resource.data.displayName
+              == request.resource.data.firstName + ' '
+                + request.resource.data.lastName
+            && request.resource.data.birthdayMarketingConsent is bool
+            && request.resource.data.birthdayConsentUpdatedAt == request.time
             && request.resource.data.username is string
             && request.resource.data.username.matches('^[a-zA-Z0-9._-]{3,20}$')
             && existsAfter(
@@ -922,6 +943,22 @@ service cloud.firestore {
           )
         ) || (
           request.auth != null
+              && request.auth.uid == userId
+              && request.auth.token.email_verified == true
+              && (
+                resource.data.birthDate is string
+                || resource.data.birthDate is timestamp
+                || resource.data.dateOfBirth is string
+                || resource.data.dateOfBirth is timestamp
+              )
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly([
+                  'birthdayMarketingConsent', 'birthdayConsentUpdatedAt'
+                ])
+              && request.resource.data.birthdayMarketingConsent is bool
+              && request.resource.data.birthdayConsentUpdatedAt == request.time
+        ) || (
+              request.auth != null
           && request.auth.uid == userId
           && !('messageCredits' in resource.data)
           && request.resource.data.diff(resource.data).affectedKeys()
@@ -1946,7 +1983,9 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'customerUid', 'customerEmail', 'shift', 'incident',
           'feedbackType', 'orderId', 'details', 'autoReply',
-          'statusMessage', 'createdAt', 'status'
+          'statusMessage', 'createdAt', 'status', 'supportCategory',
+          'subject', 'attachmentBase64', 'attachmentContentType',
+          'attachmentName'
         ])
         && request.resource.data.keys().hasAll([
           'customerUid', 'customerEmail', 'shift', 'feedbackType', 'incident',
@@ -1954,6 +1993,7 @@ service cloud.firestore {
         ])
         && request.resource.data.customerUid == request.auth.uid
         && request.resource.data.customerEmail == request.auth.token.email
+        && request.auth.token.email_verified == true
         && request.resource.data.shift in ['morning', 'afternoon', 'night']
         && request.resource.data.feedbackType
           in ['suggestion', 'compliment', 'complaint']
@@ -1968,6 +2008,31 @@ service cloud.firestore {
         && request.resource.data.statusMessage
           == 'Tu mensaje fue recibido y está pendiente de revisión.'
         && request.resource.data.incident is string
+        && (
+          !('supportCategory' in request.resource.data)
+          || request.resource.data.supportCategory in [
+            'Mi Bitácora', 'Wolves Member Card', 'Billetera',
+            'Mis Coleccionables', 'Álbum Cold Brew', 'Mis Mascotas',
+            'Mis Pedidos', 'Otro'
+          ]
+        )
+        && (
+          !('subject' in request.resource.data)
+          || request.resource.data.subject is string
+            && request.resource.data.subject.size() >= 4
+            && request.resource.data.subject.size() <= 120
+        )
+        && (
+          !('attachmentBase64' in request.resource.data)
+          && !('attachmentContentType' in request.resource.data)
+          && !('attachmentName' in request.resource.data)
+          || 'attachmentBase64' in request.resource.data
+            && request.resource.data.attachmentBase64 is string
+            && request.resource.data.attachmentBase64.size() <= 600000
+            && request.resource.data.attachmentContentType == 'image/jpeg'
+            && request.resource.data.attachmentName is string
+            && request.resource.data.attachmentName.size() <= 120
+        )
         && (!('orderId' in request.resource.data)
           || request.resource.data.orderId is string
             && request.resource.data.orderId.size() <= 100)

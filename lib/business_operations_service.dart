@@ -282,9 +282,7 @@ class BusinessOperationsService {
         throw StateError('Abre la caja antes de registrar ventas.');
       }
       if (paymentMethod == 'wallet') {
-        if (customerUid == null ||
-            customerUid.isEmpty ||
-            walletRef == null) {
+        if (customerUid == null || customerUid.isEmpty || walletRef == null) {
           throw StateError(
             'Debes identificar al cliente para cobrar con billetera.',
           );
@@ -578,9 +576,41 @@ class BusinessOperationsService {
     required String shift,
     required String feedbackType,
     required String incident,
+    String? supportCategory,
+    String? subject,
     required String details,
     String? orderId,
+    String? attachmentBase64,
+    String? attachmentName,
   }) async {
+    final normalizedSubject = subject?.trim();
+    if (normalizedSubject != null &&
+        (normalizedSubject.length < 4 || normalizedSubject.length > 120)) {
+      throw ArgumentError('El asunto debe tener entre 4 y 120 caracteres.');
+    }
+    if (supportCategory != null &&
+        !const {
+          'Mi Bitácora',
+          'Wolves Member Card',
+          'Billetera',
+          'Mis Coleccionables',
+          'Álbum Cold Brew',
+          'Mis Mascotas',
+          'Mis Pedidos',
+          'Otro',
+        }.contains(supportCategory)) {
+      throw ArgumentError.value(
+        supportCategory,
+        'supportCategory',
+        'Categoría de soporte no válida.',
+      );
+    }
+    if (attachmentBase64 != null &&
+        (attachmentBase64.length > 600000 ||
+            attachmentName == null ||
+            attachmentName.length > 120)) {
+      throw ArgumentError('La captura adjunta no es válida.');
+    }
     final autoReply = customerComplaintAutoReply(feedbackType);
     final complaint = _firestore.collection('customerComplaints').doc();
     await complaint.set({
@@ -589,9 +619,16 @@ class BusinessOperationsService {
       'shift': shift,
       'feedbackType': feedbackType,
       'incident': incident,
+      if (supportCategory != null) 'supportCategory': supportCategory,
+      if (normalizedSubject != null) 'subject': normalizedSubject,
       'details': details,
       'autoReply': autoReply,
       'statusMessage': customerComplaintStatusMessage('new'),
+      if (attachmentBase64 != null) ...{
+        'attachmentBase64': attachmentBase64,
+        'attachmentContentType': 'image/jpeg',
+        'attachmentName': attachmentName,
+      },
       if (orderId != null && orderId.trim().isNotEmpty)
         'orderId': orderId.trim(),
       'createdAt': FieldValue.serverTimestamp(),
