@@ -27952,7 +27952,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   Future<void> _showMyCustomerComplaintHistory(String customerUid) async {
     await showDialog<void>(
-      context: context,
+      context: _navigatorKey.currentContext ?? context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: card,
         title: const Text(
@@ -28098,7 +28098,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     String autoReply,
   ) async {
     await showDialog<void>(
-      context: context,
+      context: _navigatorKey.currentContext ?? context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: card,
         icon: const Icon(Icons.mark_email_read_outlined, color: gold),
@@ -28143,7 +28143,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     try {
       final bytes = base64Decode(base64Image);
       await showDialog<void>(
-        context: context,
+        context: _navigatorKey.currentContext ?? context,
         builder: (dialogContext) => AlertDialog(
           backgroundColor: card,
           title: Text(
@@ -28228,7 +28228,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
     try {
       await showDialog<void>(
-        context: context,
+        context: _navigatorKey.currentContext ?? context,
         builder: (dialogContext) => StatefulBuilder(
           builder: (dialogContext, setDialogState) => AlertDialog(
             backgroundColor: card,
