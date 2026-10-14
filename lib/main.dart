@@ -29581,9 +29581,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       type: BottomNavigationBarType.fixed,
       backgroundColor: card,
       selectedItemColor: gold,
-      unselectedItemColor: muted,
+      unselectedItemColor: gold,
       selectedFontSize: 10,
       unselectedFontSize: 10,
+      selectedLabelStyle: const TextStyle(color: cream),
+      unselectedLabelStyle: const TextStyle(color: cream),
       items: const [
         BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined), label: 'Inicio'),
