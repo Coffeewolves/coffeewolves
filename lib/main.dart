@@ -4383,7 +4383,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   static const brown = Color(0xFF9A7D68);
   static const brownDark = Color(0xFF49372D);
   static const white = Color(0xFFC6A574);
-  static const muted = Color(0xFFADB3B8);
+  static const muted = Color(0xFFD6C7B9);
   static const green = Color(0xFF70B58A);
   static const gold = Color(0xFFC6A574);
 
@@ -11088,7 +11088,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 fontWeight: FontWeight.w300,
               ),
               bodySmall: const TextStyle(
-                color: gold,
+                color: muted,
                 fontWeight: FontWeight.w300,
               ),
               labelLarge: const TextStyle(
@@ -11100,10 +11100,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 fontWeight: FontWeight.w300,
               ),
               labelSmall: const TextStyle(
-                color: gold,
+                color: muted,
                 fontWeight: FontWeight.w300,
               ),
             ),
+        listTileTheme: const ListTileThemeData(
+          subtitleTextStyle: TextStyle(color: muted),
+        ),
         colorScheme: const ColorScheme.dark(
           primary: gold,
           surface: bg,
