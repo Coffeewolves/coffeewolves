@@ -11048,7 +11048,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         scaffoldBackgroundColor: bg,
         fontFamily: 'Montserrat',
         iconTheme: const IconThemeData(color: gold),
-        textTheme: ThemeData.dark().textTheme
+        textTheme: ThemeData.dark()
+            .textTheme
             .apply(bodyColor: gold, displayColor: gold)
             .copyWith(
               bodyLarge: const TextStyle(
@@ -29946,13 +29947,16 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           children: [
             iconAsset == null
                 ? WolvesIcon(icon: icon, color: gold, size: 22)
-                : Image.asset(
-                    iconAsset,
-                    width: 26,
-                    height: 26,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) =>
-                        WolvesIcon(icon: icon, color: gold, size: 22),
+                : ColorFiltered(
+                    colorFilter: const ColorFilter.mode(gold, BlendMode.srcIn),
+                    child: Image.asset(
+                      iconAsset,
+                      width: 26,
+                      height: 26,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) =>
+                          WolvesIcon(icon: icon, color: gold, size: 22),
+                    ),
                   ),
             const SizedBox(height: 5),
             Text(label,
@@ -30063,15 +30067,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               height: 62,
               child: Icon(icon, size: 34, color: gold),
             )
-          : Image.asset(
-              imageAsset,
-              width: 62,
-              height: 62,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => SizedBox(
+          : ColorFiltered(
+              colorFilter: const ColorFilter.mode(gold, BlendMode.srcIn),
+              child: Image.asset(
+                imageAsset,
                 width: 62,
                 height: 62,
-                child: Icon(icon, size: 34, color: gold),
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => SizedBox(
+                  width: 62,
+                  height: 62,
+                  child: Icon(icon, size: 34, color: gold),
+                ),
               ),
             ),
       title: Text(title,
@@ -30969,13 +30976,16 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       leading: leadingWidget ??
           (iconAsset == null
               ? WolvesIcon(icon: icon, color: cream)
-              : Image.asset(
-                  iconAsset,
-                  width: 44,
-                  height: 44,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) =>
-                      WolvesIcon(icon: icon, color: cream),
+              : ColorFiltered(
+                  colorFilter: const ColorFilter.mode(gold, BlendMode.srcIn),
+                  child: Image.asset(
+                    iconAsset,
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        WolvesIcon(icon: icon, color: gold),
+                  ),
                 )),
       title: Text(label, style: const TextStyle(color: white)),
       trailing: const Icon(Icons.chevron_right, color: muted),
@@ -30988,19 +30998,22 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Image.asset(
-            'assets/images/menu_icons/lost_pet.png',
-            width: 36,
-            height: 36,
-            fit: BoxFit.contain,
+          ColorFiltered(
+            colorFilter: const ColorFilter.mode(gold, BlendMode.srcIn),
+            child: Image.asset(
+              'assets/images/menu_icons/lost_pet.png',
+              width: 36,
+              height: 36,
+              fit: BoxFit.contain,
+            ),
           ),
           const Positioned(
             left: 0,
-            child: Icon(Icons.star, color: cream, size: 9),
+            child: Icon(Icons.star, color: gold, size: 9),
           ),
           const Positioned(
             right: 0,
-            child: Icon(Icons.star, color: cream, size: 9),
+            child: Icon(Icons.star, color: gold, size: 9),
           ),
         ],
       ),
