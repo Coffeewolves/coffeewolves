@@ -18804,6 +18804,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         final orderId = data['orderId'] as String?;
                         final customerEmail = data['customerEmail'] as String?;
                         final customerUid = data['customerUid'] as String?;
+                        final memberCardId =
+                            data['memberCardId'] is String
+                                ? data['memberCardId'] as String
+                                : null;
                         final customerContact = customerEmail?.trim();
                         final customerId = customerUid?.trim();
                         final attachmentBase64 =
@@ -18922,6 +18926,15 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                                   fontSize: 9,
                                 ),
                               ),
+                              if (memberCardId?.trim().isNotEmpty == true)
+                                SelectableText(
+                                  'ID de Wolves Member Card: '
+                                  '${memberCardId!.trim()}',
+                                  style: const TextStyle(
+                                    color: gold,
+                                    fontSize: 9,
+                                  ),
+                                ),
                               const SizedBox(height: 8),
                               Wrap(
                                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -22796,6 +22809,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       BrandIcons.garra,
                       'Lanza tu\naullido',
                       _startMatch,
+                      iconAsset: 'assets/images/menu_icons/match.png',
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -28242,6 +28256,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     final user = FirebaseAuth.instance.currentUser ?? _firebaseUser;
     final detailsController = TextEditingController();
     final subjectController = TextEditingController();
+    final memberCardIdController = TextEditingController();
     final orderController = TextEditingController();
     var selectedShift = 'morning';
     var selectedFeedbackType = 'complaint';
@@ -28380,21 +28395,14 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                     ),
                   ),
                   const SizedBox(height: 4),
-                  InputDecorator(
+                  TextField(
+                    controller: memberCardIdController,
+                    enabled: !isSubmitting,
+                    maxLength: 120,
                     decoration: const InputDecoration(
-                      labelText: 'ID de usuario',
+                      labelText: 'ID de Wolves Member Card (opcional)',
+                      hintText: 'Solo si tienes una Member Card',
                       prefixIcon: Icon(Icons.badge_outlined),
-                    ),
-                    child: SelectableText(
-                      user == null
-                          ? 'Inicia sesión para consultar tu ID'
-                          : user.uid,
-                      maxLines: null,
-                      style: const TextStyle(
-                        color: gold,
-                        fontSize: 12,
-                        letterSpacing: 0.7,
-                      ),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -28611,6 +28619,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                             supportCategory: selectedSupportCategory,
                             subject: subject,
                             details: details,
+                            memberCardId: memberCardIdController.text,
                             orderId: orderController.text,
                             attachmentBase64: screenshotBytes == null
                                 ? null
@@ -28666,6 +28675,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     } finally {
       detailsController.dispose();
       subjectController.dispose();
+      memberCardIdController.dispose();
       orderController.dispose();
     }
   }
@@ -29610,7 +29620,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             BrandIcons.garra,
             'Hoy nos falta uno',
             () => go('lostPet'),
-            iconAsset: 'assets/images/menu_icons/lost_pet.png',
+            leadingWidget: _lostPetMenuIcon(),
           ),
           _profileOption(
             BrandIcons.garra,
@@ -30116,7 +30126,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     );
   }
 
-  Widget _quickCard(IconData icon, String label, VoidCallback onTap) {
+  Widget _quickCard(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    String? iconAsset,
+  }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -30131,7 +30146,16 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            WolvesIcon(icon: icon, color: gold, size: 22),
+            iconAsset == null
+                ? WolvesIcon(icon: icon, color: gold, size: 22)
+                : Image.asset(
+                    iconAsset,
+                    width: 26,
+                    height: 26,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        WolvesIcon(icon: icon, color: gold, size: 22),
+                  ),
             const SizedBox(height: 5),
             Text(label,
                 textAlign: TextAlign.center,
@@ -31137,24 +31161,51 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     String label,
     VoidCallback onTap, {
     String? iconAsset,
+    Widget? leadingWidget,
     Key? key,
   }) {
     return ListTile(
       key: key,
       onTap: onTap,
       contentPadding: EdgeInsets.zero,
-      leading: iconAsset == null
-          ? WolvesIcon(icon: icon, color: cream)
-          : Image.asset(
-              iconAsset,
-              width: 44,
-              height: 44,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) =>
-                  WolvesIcon(icon: icon, color: cream),
-            ),
+      leading: leadingWidget ??
+          (iconAsset == null
+              ? WolvesIcon(icon: icon, color: cream)
+              : Image.asset(
+                  iconAsset,
+                  width: 44,
+                  height: 44,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) =>
+                      WolvesIcon(icon: icon, color: cream),
+                )),
       title: Text(label, style: const TextStyle(color: white)),
       trailing: const Icon(Icons.chevron_right, color: muted),
+    );
+  }
+
+  Widget _lostPetMenuIcon() {
+    return SizedBox.square(
+      dimension: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Image.asset(
+            'assets/images/menu_icons/lost_pet.png',
+            width: 36,
+            height: 36,
+            fit: BoxFit.contain,
+          ),
+          const Positioned(
+            left: 0,
+            child: Icon(Icons.star, color: cream, size: 9),
+          ),
+          const Positioned(
+            right: 0,
+            child: Icon(Icons.star, color: cream, size: 9),
+          ),
+        ],
+      ),
     );
   }
 

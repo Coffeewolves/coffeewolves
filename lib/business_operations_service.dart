@@ -579,14 +579,19 @@ class BusinessOperationsService {
     String? supportCategory,
     String? subject,
     required String details,
+    String? memberCardId,
     String? orderId,
     String? attachmentBase64,
     String? attachmentName,
   }) async {
     final normalizedSubject = subject?.trim();
+    final normalizedMemberCardId = memberCardId?.trim();
     if (normalizedSubject != null &&
         (normalizedSubject.length < 4 || normalizedSubject.length > 120)) {
       throw ArgumentError('El asunto debe tener entre 4 y 120 caracteres.');
+    }
+    if (normalizedMemberCardId != null && normalizedMemberCardId.length > 120) {
+      throw ArgumentError('El ID de Wolves Member Card no es válido.');
     }
     if (supportCategory != null &&
         !const {
@@ -624,6 +629,8 @@ class BusinessOperationsService {
       'incident': incident,
       if (supportCategory != null) 'supportCategory': supportCategory,
       if (normalizedSubject != null) 'subject': normalizedSubject,
+      if (normalizedMemberCardId?.isNotEmpty == true)
+        'memberCardId': normalizedMemberCardId,
       'details': details,
       'autoReply': autoReply,
       'statusMessage': customerComplaintStatusMessage('new'),

@@ -2662,7 +2662,7 @@ service cloud.firestore {
           'customerUid', 'customerEmail', 'shift', 'incident',
           'feedbackType', 'orderId', 'details', 'autoReply',
           'statusMessage', 'createdAt', 'status', 'supportCategory',
-          'subject', 'attachmentBase64', 'attachmentContentType',
+          'subject', 'memberCardId', 'attachmentBase64', 'attachmentContentType',
           'attachmentName'
         ])
         && request.resource.data.keys().hasAll([
@@ -2700,6 +2700,12 @@ service cloud.firestore {
           || request.resource.data.subject is string
             && request.resource.data.subject.size() >= 4
             && request.resource.data.subject.size() <= 120
+        )
+        && (
+          !('memberCardId' in request.resource.data)
+          || request.resource.data.memberCardId is string
+            && request.resource.data.memberCardId.size() > 0
+            && request.resource.data.memberCardId.size() <= 120
         )
         && (
           !('attachmentBase64' in request.resource.data)
