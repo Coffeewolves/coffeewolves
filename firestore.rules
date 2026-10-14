@@ -14,6 +14,31 @@ service cloud.firestore {
       return role is string && role.lower() in ['barista', 'cajero'];
     }
 
+    function createdAtMatchesRequestTime() {
+      let createdAt = request.resource.data.createdAt;
+      return createdAt == request.time;
+    }
+
+    function updatedAtMatchesRequestTime() {
+      let updatedAt = request.resource.data.updatedAt;
+      return updatedAt == request.time;
+    }
+
+    function cafeSaleDocumentPath(saleId) {
+      return /databases/$(database)/documents/cafeSales/$(saleId);
+    }
+
+    function validMemberCardFields(data) {
+      return data.keys().hasOnly([
+          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
+          'sequence', 'createdBy', 'createdAt'
+        ])
+        && data.keys().hasAll([
+          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
+          'sequence', 'createdBy', 'createdAt'
+        ]);
+    }
+
     function hasManagementOrStaff() {
       return request.auth != null
         && (exists(/databases/$(database)/documents/management/$(request.auth.uid))
@@ -936,7 +961,7 @@ service cloud.firestore {
               == request.resource.data.username.lower()
         )
         && request.resource.data.birthDate is string
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && request.resource.data.approvedAt == request.time;
 
       allow update: if isAdmin()
@@ -978,7 +1003,7 @@ service cloud.firestore {
           'memberCount', 'dailyPostDate', 'dailyPostCount',
           'lastMemberUid', 'lastPostId', 'updatedAt'
         ])
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && request.resource.data.memberCount == 1
         && request.resource.data.dailyPostDate is string
         && request.resource.data.dailyPostDate.matches(
@@ -1011,7 +1036,7 @@ service cloud.firestore {
         );
       allow update: if statsId == 'mischiefWall'
         && request.auth != null
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && (
           (
             request.resource.data.diff(resource.data).affectedKeys()
@@ -1118,7 +1143,7 @@ service cloud.firestore {
             + duration.value(1, 'm')
         && request.resource.data.innocentVotes == 0
         && request.resource.data.guiltyVotes == 0
-        && request.resource.data.createdAt == request.time;
+        && createdAtMatchesRequestTime();
 
       allow update, delete: if false;
 
@@ -1168,7 +1193,7 @@ service cloud.firestore {
         && request.resource.data.postId.size() <= 80
         && reportId == request.resource.data.postId + '_'
           + request.auth.uid
-        && request.resource.data.createdAt == request.time;
+        && createdAtMatchesRequestTime();
       allow update, delete: if false;
     }
 
@@ -1176,8 +1201,8 @@ service cloud.firestore {
       allow get, list: if isAdmin() || resource.data.published == true;
       allow create: if isAdmin()
         && validPackLegacyProfile(request.resource.data)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime();
       allow update: if isAdmin()
         && validPackLegacyProfile(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -1186,7 +1211,7 @@ service cloud.firestore {
           'published', 'updatedAt'
         ])
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time;
+        && updatedAtMatchesRequestTime();
       allow delete: if isAdmin();
     }
 
@@ -1230,14 +1255,14 @@ service cloud.firestore {
         && request.auth.uid == userId
         && request.auth.token.email_verified == true
         && validPetProfile(request.resource.data)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime();
       allow update: if request.auth != null
         && request.auth.uid == userId
         && request.auth.token.email_verified == true
         && validPetProfile(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time;
+        && updatedAtMatchesRequestTime();
       allow delete: if request.auth != null
         && request.auth.uid == userId
         && request.auth.token.email_verified == true;
@@ -1252,15 +1277,15 @@ service cloud.firestore {
         && request.resource.data.sightingsCount == 0
         && request.resource.data.reunionStory == ''
         && request.resource.data.shareReunion == false
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime();
       allow update: if isVerifiedLostPetMember()
         && resource.data.ownerUid == request.auth.uid
         && validLostPetMission(request.resource.data)
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.sightingsCount == resource.data.sightingsCount
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'petName', 'species', 'breed', 'size', 'color', 'sex', 'markings',
           'missingAt', 'city', 'area', 'lastSeenArea', 'description',
@@ -1289,8 +1314,8 @@ service cloud.firestore {
           && request.resource.data.identification.size() <= 250
           && request.resource.data.reunionStory is string
           && request.resource.data.reunionStory.size() <= 400
-          && request.resource.data.createdAt == request.time
-          && request.resource.data.updatedAt == request.time
+          && createdAtMatchesRequestTime()
+          && updatedAtMatchesRequestTime()
           && getAfter(
             /databases/$(database)/documents/lostPetMissions/$(missionId)
           ).data.ownerUid == request.auth.uid;
@@ -1304,7 +1329,7 @@ service cloud.firestore {
           && request.resource.data.reunionStory is string
           && request.resource.data.reunionStory.size() <= 400
           && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.updatedAt == request.time
+          && updatedAtMatchesRequestTime()
           && get(
             /databases/$(database)/documents/lostPetMissions/$(missionId)
           ).data.ownerUid == request.auth.uid;
@@ -1348,7 +1373,7 @@ service cloud.firestore {
       allow get, list: if isAuthenticatedLostPetMember();
       allow create: if isVerifiedLostPetMember()
         && validLostPetSighting(request.resource.data)
-        && request.resource.data.createdAt == request.time;
+        && createdAtMatchesRequestTime();
       allow update, delete: if false;
     }
 
@@ -1380,8 +1405,8 @@ service cloud.firestore {
         && request.resource.data.message.size() <= 500
         && request.resource.data.status == 'new'
         && request.resource.data.ownerReply == ''
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime()
         && exists(
           /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
         )
@@ -1398,7 +1423,7 @@ service cloud.firestore {
         && request.resource.data.ownerReply.size() > 0
         && request.resource.data.ownerReply.size() <= 500
         && request.resource.data.status == 'replied'
-        && request.resource.data.updatedAt == request.time;
+        && updatedAtMatchesRequestTime();
       allow delete: if false;
     }
 
@@ -1411,7 +1436,7 @@ service cloud.firestore {
         ])
         && request.resource.data.userUid == request.auth.uid
         && request.resource.data.missionId is string
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && exists(
           /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
         );
@@ -1433,7 +1458,7 @@ service cloud.firestore {
         ]
         && request.resource.data.details is string
         && request.resource.data.details.size() <= 300
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && reportId == request.resource.data.missionId + '_'
           + request.auth.uid
         && exists(
@@ -1463,7 +1488,7 @@ service cloud.firestore {
         && request.resource.data.isVerified == false
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.displayName is string
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && (
           !('birthdayMarketingConsent' in request.resource.data)
           && !('birthdayConsentUpdatedAt' in request.resource.data)
@@ -1694,7 +1719,7 @@ service cloud.firestore {
           && request.resource.data.matchName is string
           && request.resource.data.matchName.size() > 0
           && request.resource.data.matchName.size() <= 80
-          && request.resource.data.createdAt == request.time
+          && createdAtMatchesRequestTime()
           && exists(
             /databases/$(database)/documents/users/$(userId)
           )
@@ -1734,7 +1759,7 @@ service cloud.firestore {
           && request.resource.data.token.size() >= 100
           && request.resource.data.token.size() <= 4096
           && request.resource.data.platform == 'web'
-          && request.resource.data.updatedAt == request.time;
+          && updatedAtMatchesRequestTime();
 
         allow update: if request.auth != null
           && request.auth.uid == userId
@@ -1753,7 +1778,7 @@ service cloud.firestore {
           && request.resource.data.token.size() >= 100
           && request.resource.data.token.size() <= 4096
           && request.resource.data.platform == 'web'
-          && request.resource.data.updatedAt == request.time;
+          && updatedAtMatchesRequestTime();
 
         allow delete: if request.auth != null
           && request.auth.uid == userId
@@ -1779,7 +1804,7 @@ service cloud.firestore {
           && request.resource.data.notes is string
           && request.resource.data.notes.size() <= 500
           && request.resource.data.isFavorite is bool
-          && request.resource.data.updatedAt == request.time
+          && updatedAtMatchesRequestTime()
           && exists(
             /databases/$(database)/documents/collectiblePlushes/$(code)
           )
@@ -1803,7 +1828,7 @@ service cloud.firestore {
           && request.resource.data.notes is string
           && request.resource.data.notes.size() <= 500
           && request.resource.data.isFavorite is bool
-          && request.resource.data.updatedAt == request.time
+          && updatedAtMatchesRequestTime()
           && exists(
             /databases/$(database)/documents/collectiblePlushes/$(code)
           )
@@ -1837,7 +1862,7 @@ service cloud.firestore {
           && request.resource.data.title.size() <= 120
           && request.resource.data.status == 'self_reported'
           && request.resource.data.completedAt == request.time
-          && request.resource.data.updatedAt == request.time;
+          && updatedAtMatchesRequestTime();
 
         allow update, delete: if false;
       }
@@ -1862,7 +1887,7 @@ service cloud.firestore {
           && request.resource.data.fromDisplayName is string
           && request.resource.data.fromDisplayName.size() <= 80
           && request.resource.data.status == 'pending'
-          && request.resource.data.createdAt == request.time;
+          && createdAtMatchesRequestTime();
 
         allow update: if request.auth != null
           && requesterUid != userId
@@ -1882,7 +1907,7 @@ service cloud.firestore {
               && request.resource.data.fromDisplayName is string
               && request.resource.data.fromDisplayName.size() <= 80
               && request.resource.data.status == 'pending'
-              && request.resource.data.createdAt == request.time
+              && createdAtMatchesRequestTime()
           );
 
         allow delete: if false;
@@ -1903,7 +1928,7 @@ service cloud.firestore {
           ])
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 80
-          && request.resource.data.createdAt == request.time
+          && createdAtMatchesRequestTime()
           && getAfter(
             /databases/$(database)/documents/users/$(friendUid)/friendRequests/$(userId)
           ).data.status == 'accepted'
@@ -1917,7 +1942,7 @@ service cloud.firestore {
 
     match /memberCards/{userId} {
       allow get: if request.auth != null
-        && (request.auth.uid == userId || isVerifiedStaff() || isAdmin());
+        && (request.auth.uid == userId || isVerifiedStaff());
       allow list: if isAdmin();
 
       allow create: if request.auth != null
@@ -1930,7 +1955,7 @@ service cloud.firestore {
         && request.resource.data.cardNumber.matches('^CW-[0-9]{6}$')
         && request.resource.data.sequence is int
         && request.resource.data.sequence > 0
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && getAfter(
           /databases/$(database)/documents/memberCardLookups/$(request.resource.data.cardNumber)
         ).data.userUid == userId
@@ -1945,7 +1970,7 @@ service cloud.firestore {
     }
 
     match /memberCardLookups/{cardNumber} {
-      allow get: if isVerifiedStaff() || isAdmin();
+      allow get: if isVerifiedStaff();
       allow list: if false;
 
       allow create: if request.auth != null
@@ -1957,7 +1982,7 @@ service cloud.firestore {
         && cardNumber.matches('^CW-[0-9]{6}$')
         && request.resource.data.sequence is int
         && request.resource.data.sequence > 0
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && getAfter(
           /databases/$(database)/documents/memberCards/$(request.auth.uid)
         ).data.cardNumber == cardNumber
@@ -1998,14 +2023,7 @@ service cloud.firestore {
       allow get, list: if isAdmin();
 
       allow create: if isAdmin()
-        && request.resource.data.keys().hasOnly([
-          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
-          'sequence', 'createdBy', 'createdAt'
-        ])
-        && request.resource.data.keys().hasAll([
-          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
-          'sequence', 'createdBy', 'createdAt'
-        ])
+        && validMemberCardFields(request.resource.data)
         && request.resource.data.fullName is string
         && request.resource.data.fullName.size() >= 2
         && request.resource.data.fullName.size() <= 120
@@ -2027,7 +2045,7 @@ service cloud.firestore {
         && request.resource.data.sequence is int
         && request.resource.data.sequence > 0
         && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && getAfter(
           /databases/$(database)/documents/customerMemberCardLookups/$(request.resource.data.memberCardNumber)
         ).data.customerId == customerId
@@ -2045,14 +2063,7 @@ service cloud.firestore {
       allow get, list: if isAdmin();
 
       allow create: if isVerifiedStaff()
-        && request.resource.data.keys().hasOnly([
-          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
-          'sequence', 'createdBy', 'createdAt'
-        ])
-        && request.resource.data.keys().hasAll([
-          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
-          'sequence', 'createdBy', 'createdAt'
-        ])
+        && validMemberCardFields(request.resource.data)
         && request.resource.data.fullName is string
         && request.resource.data.fullName.size() >= 2
         && request.resource.data.fullName.size() <= 120
@@ -2074,7 +2085,7 @@ service cloud.firestore {
         && request.resource.data.sequence is int
         && request.resource.data.sequence > 0
         && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && getAfter(
           /databases/$(database)/documents/customerMemberCardLookups/$(request.resource.data.memberCardNumber)
         ).data.holderId == holderId
@@ -2089,7 +2100,7 @@ service cloud.firestore {
     }
 
     match /customerMemberCardLookups/{cardNumber} {
-      allow get: if isVerifiedStaff() || isAdmin();
+      allow get: if isVerifiedStaff();
       allow list: if false;
 
       allow create: if isVerifiedStaff()
@@ -2108,7 +2119,7 @@ service cloud.firestore {
         && request.resource.data.sequence is int
         && request.resource.data.sequence > 0
         && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && (
           request.resource.data.keys().hasAny(['customerId'])
             && request.resource.data.customerId is string
@@ -2199,7 +2210,7 @@ service cloud.firestore {
         && request.resource.data.requestedRole
           in ['barista', 'cajero']
         && request.resource.data.status == 'pending'
-        && request.resource.data.createdAt == request.time;
+        && createdAtMatchesRequestTime();
 
       allow update: if (
           request.auth != null
@@ -2232,7 +2243,7 @@ service cloud.firestore {
           && request.resource.data.requestedRole
             in ['barista', 'cajero']
           && request.resource.data.status == 'pending'
-          && request.resource.data.createdAt == request.time
+          && createdAtMatchesRequestTime()
         ) || (
           isAdmin()
           && resource.data.status == 'pending'
@@ -2273,7 +2284,7 @@ service cloud.firestore {
         && request.resource.data.body is string
         && request.resource.data.body.size() >= 8
         && request.resource.data.body.size() <= 3000
-        && request.resource.data.createdAt == request.time;
+        && createdAtMatchesRequestTime();
 
       allow update, delete: if false;
     }
@@ -2402,7 +2413,7 @@ service cloud.firestore {
     }
 
     match /pedidos_internos/{orderId} {
-      allow get, list: if isVerifiedStaff() || isAdmin();
+      allow get, list: if isVerifiedStaff();
 
       allow create: if isVerifiedStaff()
         && request.resource.data.keys().hasOnly([
@@ -2434,7 +2445,7 @@ service cloud.firestore {
           == (request.resource.data.items.size() == 0
             ? 'confirmed'
             : 'pending')
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && (
           !('tableNumber' in request.resource.data)
           || request.resource.data.tableNumber is int
@@ -2485,7 +2496,7 @@ service cloud.firestore {
     }
 
     match /cafeOrders/{orderId} {
-      allow get, list: if isVerifiedStaff() || isAdmin();
+      allow get, list: if isVerifiedStaff();
 
       allow create: if isVerifiedStaff()
         && request.resource.data.keys().hasOnly([
@@ -2498,7 +2509,7 @@ service cloud.firestore {
         && request.resource.data.saleId == orderId
         && request.resource.data.employeeUid == request.auth.uid
         && request.resource.data.status == 'pending'
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
         && request.resource.data.items.size() <= 30
@@ -2707,7 +2718,7 @@ service cloud.firestore {
         && request.resource.data.details is string
         && request.resource.data.details.size() >= 10
         && request.resource.data.details.size() <= 2000
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && request.resource.data.status == 'new';
 
       allow get, list: if isAdmin()
@@ -2746,7 +2757,7 @@ service cloud.firestore {
           == request.auth.uid + '__' + request.resource.data.methodName
         && request.resource.data.notes is string
         && request.resource.data.notes.size() <= 2000
-        && request.resource.data.updatedAt == request.time;
+        && updatedAtMatchesRequestTime();
 
       allow update: if request.auth != null
         && resource.data.ownerUid == request.auth.uid
@@ -2757,7 +2768,7 @@ service cloud.firestore {
           == request.auth.uid + '__' + request.resource.data.methodName
         && request.resource.data.notes is string
         && request.resource.data.notes.size() <= 2000
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['notes', 'updatedAt']);
 
@@ -2767,7 +2778,7 @@ service cloud.firestore {
 
     match /passportProgress/{customerUid} {
       allow get: if request.auth != null
-        && (request.auth.uid == customerUid || isVerifiedStaff() || isAdmin());
+        && (request.auth.uid == customerUid || isVerifiedStaff());
       allow list: if isAdmin();
 
       allow create: if isVerifiedStaff()
@@ -2788,8 +2799,8 @@ service cloud.firestore {
         && request.resource.data.completedCount == 1
         && request.resource.data.rewardClaimed == false
         && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.createdAt == request.time
+        && updatedAtMatchesRequestTime()
+        && createdAtMatchesRequestTime()
         && request.resource.data.lastStampId is string
         && passportStampMatches(
           request.resource.data.lastStampId,
@@ -2817,7 +2828,7 @@ service cloud.firestore {
           && request.resource.data.completedCount
             == resource.data.completedCount + 1
           && request.resource.data.updatedBy == request.auth.uid
-          && request.resource.data.updatedAt == request.time
+          && updatedAtMatchesRequestTime()
           && request.resource.data.lastStampId is string
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'completedMethods', 'completedCount', 'updatedBy',
@@ -2997,10 +3008,10 @@ service cloud.firestore {
         && request.resource.data.stock < resource.data.stock
         && request.resource.data.lastSaleId is string
         && getAfter(
-          /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+          cafeSaleDocumentPath(request.resource.data.lastSaleId)
         ).data.employeeUid == request.auth.uid
         && getAfter(
-          /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+          cafeSaleDocumentPath(request.resource.data.lastSaleId)
         ).data.shopProductQuantities[productId]
           == resource.data.stock - request.resource.data.stock
         && (
@@ -3010,73 +3021,73 @@ service cloud.firestore {
             && 'stockBySize' in request.resource.data
             && validShopSizeStock(request.resource.data)
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId] is map
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('S', 0) is int
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('S', 0) >= 0
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('M', 0) is int
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('M', 0) >= 0
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('L', 0) is int
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('L', 0) >= 0
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('XL', 0) is int
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('XL', 0) >= 0
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('2XL', 0) is int
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('2XL', 0) >= 0
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('3XL', 0) is int
             && getAfter(
-              /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
             ).data.shopVariantQuantities[productId].get('3XL', 0) >= 0
             && request.resource.data.stockBySize.get('S', 0)
               == resource.data.stockBySize.get('S', 0)
                 - getAfter(
-                  /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
                 ).data.shopVariantQuantities[productId].get('S', 0)
             && request.resource.data.stockBySize.get('M', 0)
               == resource.data.stockBySize.get('M', 0)
                 - getAfter(
-                  /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
                 ).data.shopVariantQuantities[productId].get('M', 0)
             && request.resource.data.stockBySize.get('L', 0)
               == resource.data.stockBySize.get('L', 0)
                 - getAfter(
-                  /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
                 ).data.shopVariantQuantities[productId].get('L', 0)
             && request.resource.data.stockBySize.get('XL', 0)
               == resource.data.stockBySize.get('XL', 0)
                 - getAfter(
-                  /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
                 ).data.shopVariantQuantities[productId].get('XL', 0)
             && request.resource.data.stockBySize.get('2XL', 0)
               == resource.data.stockBySize.get('2XL', 0)
                 - getAfter(
-                  /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
                 ).data.shopVariantQuantities[productId].get('2XL', 0)
             && request.resource.data.stockBySize.get('3XL', 0)
               == resource.data.stockBySize.get('3XL', 0)
                 - getAfter(
-                  /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
                 ).data.shopVariantQuantities[productId].get('3XL', 0)
         )
       );
@@ -3109,7 +3120,7 @@ service cloud.firestore {
         && request.resource.data.price is number
         && request.resource.data.price >= 0
         && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && (!('familyId' in request.resource.data)
           || request.resource.data.familyId is string)
         && (!('familyName' in request.resource.data)
@@ -3145,7 +3156,7 @@ service cloud.firestore {
         && request.resource.data.price is number
         && request.resource.data.price >= 0
         && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && (!('familyId' in request.resource.data)
           || !request.resource.data.diff(resource.data).affectedKeys()
             .hasAny(['familyId'])
@@ -3173,10 +3184,10 @@ service cloud.firestore {
           && request.resource.data.stock < resource.data.stock
           && request.resource.data.lastSaleId is string
           && getAfter(
-            /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+            cafeSaleDocumentPath(request.resource.data.lastSaleId)
           ).data.employeeUid == request.auth.uid
           && getAfter(
-            /databases/$(database)/documents/cafeSales/$(request.resource.data.lastSaleId)
+            cafeSaleDocumentPath(request.resource.data.lastSaleId)
           ).data.productQuantities[productId]
             == resource.data.stock - request.resource.data.stock
           && request.resource.data.diff(resource.data).affectedKeys()
@@ -3198,7 +3209,7 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0
         && request.resource.data.isDeleted is bool
         && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.updatedAt == request.time;
+        && updatedAtMatchesRequestTime();
       allow delete: if isAdmin();
     }
 
@@ -3224,8 +3235,8 @@ service cloud.firestore {
           || request.resource.data.dateLabel is string
             && request.resource.data.dateLabel.size() <= 80)
         && request.resource.data.isActive is bool
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime()
         && request.resource.data.updatedBy == request.auth.uid;
 
       allow update: if isAdmin()
@@ -3243,7 +3254,7 @@ service cloud.firestore {
           || request.resource.data.dateLabel is string
             && request.resource.data.dateLabel.size() <= 80)
         && request.resource.data.isActive is bool
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && request.resource.data.updatedBy == request.auth.uid;
 
       allow delete: if isAdmin();
@@ -3255,7 +3266,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['isExcluded', 'updatedAt'])
         && request.resource.data.keys().hasAll(['isExcluded', 'updatedAt'])
         && request.resource.data.isExcluded == true
-        && request.resource.data.updatedAt == request.time;
+        && updatedAtMatchesRequestTime();
       allow delete: if isAdmin();
     }
 
@@ -3273,7 +3284,7 @@ service cloud.firestore {
         && request.resource.data.imageBase64.size() <= 700000
         && request.resource.data.contentType == 'image/jpeg'
         && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.updatedAt == request.time;
+        && updatedAtMatchesRequestTime();
       allow delete: if isAdmin();
     }
 
@@ -3294,7 +3305,7 @@ service cloud.firestore {
       }
 
       allow get: if request.auth != null
-        && (request.auth.uid == customerUid || isVerifiedStaff() || isAdmin());
+        && (request.auth.uid == customerUid || isVerifiedStaff());
       allow list: if isAdmin();
 
       allow create: if isVerifiedStaff()
@@ -3306,7 +3317,7 @@ service cloud.firestore {
         && request.resource.data.stamps == 1
         && validColdBrewFigureList(request.resource.data.figures)
         && request.resource.data.figures.size() == 1
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.lastRedemptionId is string
         && request.resource.data.figures[0]
@@ -3330,7 +3341,7 @@ service cloud.firestore {
         && request.resource.data.customerUid == customerUid
         && request.resource.data.stamps == resource.data.stamps + 1
         && validFigureUpdate()
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && request.resource.data.updatedBy == request.auth.uid
         && request.resource.data.lastRedemptionId is string
         && auditMatches(
@@ -3348,7 +3359,7 @@ service cloud.firestore {
     match /coldBrewTastingNotes/{noteId} {
       allow get, list: if request.auth != null
         && (resource.data.customerUid == request.auth.uid
-          || isVerifiedStaff() || isAdmin());
+          || isVerifiedStaff());
       allow create: if request.auth != null
         && request.auth.uid == request.resource.data.customerUid
         && request.resource.data.keys().hasOnly([
@@ -3360,12 +3371,12 @@ service cloud.firestore {
         && request.resource.data.rating is int
         && request.resource.data.rating >= 1
         && request.resource.data.rating <= 5
-        && request.resource.data.createdAt == request.time;
+        && createdAtMatchesRequestTime();
       allow update, delete: if false;
     }
 
     match /collectibleCharacters/{modelCode} {
-      allow get: if isVerifiedStaff() || isAdmin();
+      allow get: if isVerifiedStaff();
       allow list: if isAdmin();
 
       allow create: if isVerifiedStaff()
@@ -3376,14 +3387,14 @@ service cloud.firestore {
         && request.resource.data.modelCode == modelCode
         && validCollectibleModel(modelCode, request.resource.data.name)
         && request.resource.data.edition == 'Original Collection'
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && request.resource.data.createdBy == request.auth.uid;
 
       allow update, delete: if false;
     }
 
     match /collectiblePlushCounters/{modelCode} {
-      allow get: if isVerifiedStaff() || isAdmin();
+      allow get: if isVerifiedStaff();
       allow list: if isAdmin();
 
       allow create: if isVerifiedStaff()
@@ -3409,7 +3420,7 @@ service cloud.firestore {
       allow get: if isVerifiedStaff()
         || isAdmin()
         || (request.auth != null && resource.data.claimedBy == request.auth.uid);
-      allow list: if isVerifiedStaff() || isAdmin()
+      allow list: if isVerifiedStaff()
         || (request.auth != null
           && resource.data.claimedBy == request.auth.uid);
 
@@ -3440,7 +3451,7 @@ service cloud.firestore {
         && request.resource.data.edition == 'Original Collection'
         && request.resource.data.inventoryStatus == 'IN_STOCK'
         && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && request.resource.data.claimedBy == null
         && request.resource.data.claimedAt == null
         && request.resource.data.claimedByEmployee == null
@@ -3608,7 +3619,7 @@ service cloud.firestore {
     }
 
     match /plushAdoptions/{code} {
-      allow get: if isVerifiedStaff() || isAdmin()
+      allow get: if isVerifiedStaff()
         || (request.auth != null && resource.data.ownerUid == request.auth.uid);
       allow list: if isAdmin();
 
@@ -3665,7 +3676,7 @@ service cloud.firestore {
     }
 
     match /plushCertificates/{code} {
-      allow get: if isVerifiedStaff() || isAdmin()
+      allow get: if isVerifiedStaff()
         || (request.auth != null && resource.data.ownerUid == request.auth.uid);
       allow list: if isAdmin();
 
@@ -3875,7 +3886,7 @@ service cloud.firestore {
           && request.resource.data.fromUid is string
           && request.resource.data.toUid is string
           && request.resource.data.fromUid != request.resource.data.toUid
-          && request.resource.data.createdAt == request.time
+          && createdAtMatchesRequestTime()
           && existsAfter(
             /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
           )
@@ -3938,7 +3949,7 @@ service cloud.firestore {
         && request.resource.data.ownerUid == userId
         && request.resource.data.balance is number
         && request.resource.data.balance >= 0
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && request.resource.data.lastTransactionId is string
         && validGiftCardWalletCredit(
           userId,
@@ -3956,7 +3967,7 @@ service cloud.firestore {
         ])
         && request.resource.data.balance is number
         && request.resource.data.balance >= 0
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && request.resource.data.lastTransactionId is string
         && (
           validGiftCardWalletCredit(
@@ -3999,7 +4010,7 @@ service cloud.firestore {
         && request.resource.data.ownerUid is string
         && request.resource.data.amount is number
         && request.resource.data.amount > 0
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && (
           request.resource.data.type == 'giftCardRedemption'
             && request.auth != null
@@ -4039,7 +4050,7 @@ service cloud.firestore {
     }
 
     match /plushUnitHistory/{historyId} {
-      allow get, list: if isVerifiedStaff() || isAdmin();
+      allow get, list: if isVerifiedStaff();
 
       allow create: if isVerifiedStaff()
         && request.resource.data.keys().hasOnly([
@@ -4051,7 +4062,7 @@ service cloud.firestore {
         )
         && request.resource.data.action in ['registered', 'adopted']
         && request.resource.data.employeeUid == request.auth.uid
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && (
           request.resource.data.action == 'registered'
             && getAfter(
@@ -4067,9 +4078,9 @@ service cloud.firestore {
     }
 
     match /giftCards/{code} {
-      allow get: if isVerifiedStaff() || isAdmin()
+      allow get: if isVerifiedStaff()
         || (request.auth != null && resource.data.status == 'active');
-      allow list: if isVerifiedStaff() || isAdmin();
+      allow list: if isVerifiedStaff();
 
       allow create: if isAdmin()
         && request.resource.data.keys().hasOnly([
@@ -4085,7 +4096,7 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.createdByEmail == request.auth.token.email
-        && request.resource.data.createdAt == request.time
+        && createdAtMatchesRequestTime()
         && request.resource.data.redeemedBy == null
         && request.resource.data.redeemedAt == null;
 
@@ -4158,7 +4169,7 @@ service cloud.firestore {
         && existsAfter(matchPublicIdAt(request.resource.data.matchPublicId))
         && getAfter(matchPublicIdAt(request.resource.data.matchPublicId)).data.uid
           == request.auth.uid
-        && request.resource.data.createdAt == request.time;
+        && createdAtMatchesRequestTime();
       allow update: if request.auth != null
         && request.auth.uid == userId
         && matchAccountEligible()
@@ -4225,7 +4236,7 @@ service cloud.firestore {
         && request.resource.data.status in [
           'configuring', 'active', 'paused', 'left'
         ]
-        && request.resource.data.updatedAt == request.time
+        && updatedAtMatchesRequestTime()
         && existsAfter(matchPublicIdAt(publicId))
         && getAfter(matchPublicIdAt(publicId)).data.uid == request.auth.uid
         && existsAfter(ownMatchParticipantPath())
@@ -4305,7 +4316,7 @@ service cloud.firestore {
         && matchAccountEligible()
         && validMatchPublicId(blockedUserId)
         && request.resource.data.keys().hasOnly(['createdAt'])
-        && request.resource.data.createdAt == request.time;
+        && createdAtMatchesRequestTime();
       allow update, delete: if false;
     }
 
@@ -4324,7 +4335,7 @@ service cloud.firestore {
         && request.resource.data.details is string
         && request.resource.data.details.size() <= 500
         && request.resource.data.status == 'open'
-        && request.resource.data.createdAt == request.time;
+        && createdAtMatchesRequestTime();
       allow get, list: if isAdmin();
       allow update, delete: if false;
     }
@@ -4407,7 +4418,7 @@ service cloud.firestore {
       allow list: if false;
       allow create: if icebreakerPairIsActive()
           && validIcebreakerAnswer(request.resource.data)
-          && request.resource.data.createdAt == request.time
+          && createdAtMatchesRequestTime()
           && request.resource.data.publicId == ownMatchPublicId()
         && answerId
           == request.resource.data.questionId + '__' + ownMatchPublicId();
