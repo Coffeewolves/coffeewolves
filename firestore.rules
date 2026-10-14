@@ -1475,7 +1475,7 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.auth.uid == userId
         && request.resource.data.keys().hasOnly([
-          'email', 'displayName', 'firstName', 'lastName', 'username',
+          'email', 'displayName', 'firstName', 'lastName', 'gender', 'username',
           'role', 'createdAt', 'birthDate', 'isVerified',
           'birthdayMarketingConsent', 'birthdayConsentUpdatedAt',
           'phoneNumber', 'phoneCountryCode', 'phoneCountryIsoCode',
@@ -1486,6 +1486,10 @@ service cloud.firestore {
           'email', 'displayName', 'createdAt', 'isVerified'
         ])
         && request.resource.data.isVerified == false
+        && (
+          !('gender' in request.resource.data)
+          || request.resource.data.gender in ['male', 'female']
+        )
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.displayName is string
         && createdAtMatchesRequestTime()
@@ -1517,7 +1521,7 @@ service cloud.firestore {
           )
           || (
             request.resource.data.keys().hasAll([
-              'firstName', 'lastName', 'username', 'role', 'birthDate',
+              'firstName', 'lastName', 'gender', 'username', 'role', 'birthDate',
               'phoneNumber', 'phoneCountryCode', 'phoneCountryIsoCode',
               'phoneNationalNumber', 'phoneVerified',
               'birthdayMarketingConsent', 'birthdayConsentUpdatedAt'
@@ -1529,6 +1533,7 @@ service cloud.firestore {
             && request.resource.data.lastName is string
             && request.resource.data.lastName.size() > 0
             && request.resource.data.lastName.size() <= 60
+            && request.resource.data.gender in ['male', 'female']
             && request.resource.data.displayName
               == request.resource.data.firstName + ' '
                 + request.resource.data.lastName

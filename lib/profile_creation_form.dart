@@ -90,6 +90,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
   final _confirmPasswordController = TextEditingController();
   final _imagePicker = ImagePicker();
   late ProfileAuthMode _mode;
+  String? _gender;
   String _phoneCountryCode = '+591';
   String _phoneCountryIsoCode = 'BO';
   DateTime? _birthDate;
@@ -154,6 +155,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
     if (!_isRegistering) return true;
     return _validatePersonName(_firstNameController.text, 'nombre') == null &&
         _validatePersonName(_lastNameController.text, 'apellido') == null &&
+        _gender != null &&
         _validateUsername(_usernameController.text) == null &&
         _isAdult &&
         password.length >= 8;
@@ -712,6 +714,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
               'displayName': fullName,
               'firstName': firstName,
               'lastName': lastName,
+              'gender': _gender!,
               'birthdayMarketingConsent': _birthdayMarketingConsent,
               'birthdayConsentUpdatedAt': FieldValue.serverTimestamp(),
               'username': _usernameController.text.trim(),
@@ -1438,6 +1441,26 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
               onChanged: _refreshSubmitButton,
             ),
             const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              key: const ValueKey('register-gender'),
+              value: _gender,
+              decoration: inputDecoration.copyWith(
+                labelText: 'Género *',
+                prefixIcon: const Icon(Icons.wc_outlined),
+              ),
+              dropdownColor: _panel,
+              style: const TextStyle(color: _cream),
+              items: const [
+                DropdownMenuItem(value: 'male', child: Text('Hombre')),
+                DropdownMenuItem(value: 'female', child: Text('Mujer')),
+              ],
+              validator: (value) =>
+                  value == null ? 'Selecciona hombre o mujer.' : null,
+              onChanged: _isLoading
+                  ? null
+                  : (value) => setState(() => _gender = value),
+            ),
+            const SizedBox(height: 14),
             TextFormField(
               controller: _usernameController,
               enabled: !_isLoading,
@@ -1800,6 +1823,7 @@ class _MissingCustomerProfileFormState
   String _phoneCountryCode = '+591';
   String _phoneCountryIsoCode = 'BO';
   DateTime? _birthDate;
+  String? _gender;
   bool _saving = false;
   String? _error;
 
@@ -1905,6 +1929,7 @@ class _MissingCustomerProfileFormState
           'displayName': '$firstName $lastName',
           'firstName': firstName,
           'lastName': lastName,
+          'gender': _gender!,
           'username': username,
           'role': 'user',
           'birthDate': '${birthDate.year.toString().padLeft(4, '0')}-'
@@ -2005,6 +2030,25 @@ class _MissingCustomerProfileFormState
                     value.trim().length > 60
                 ? 'Escribe tu apellido (máximo 60 caracteres).'
                 : null,
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            key: const ValueKey('complete-profile-gender'),
+            value: _gender,
+            decoration: inputDecoration.copyWith(
+              labelText: 'Género *',
+              prefixIcon: const Icon(Icons.wc_outlined),
+            ),
+            dropdownColor: _panel,
+            style: const TextStyle(color: _cream),
+            items: const [
+              DropdownMenuItem(value: 'male', child: Text('Hombre')),
+              DropdownMenuItem(value: 'female', child: Text('Mujer')),
+            ],
+            validator: (value) =>
+                value == null ? 'Selecciona hombre o mujer.' : null,
+            onChanged:
+                _saving ? null : (value) => setState(() => _gender = value),
           ),
           const SizedBox(height: 10),
           TextFormField(

@@ -4404,6 +4404,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   String userName = '';
   String userHandle = '';
+  String? _userGender;
   User? _firebaseUser;
   Uint8List? _profilePhotoBytes;
   String _matchIntent = '';
@@ -5006,6 +5007,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _authStateError = null;
       if (_firebaseUser?.uid != user?.uid) {
         _profilePhotoBytes = null;
+        _userGender = null;
       }
       _firebaseUser = user;
       _userRole = 'user';
@@ -5134,6 +5136,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 'No se pudo preparar tu perfil para registrar recompensas.');
           }
         }
+        await _loadUserGender(activeUser, authGeneration);
         await _loadProfilePhoto(activeUser, authGeneration);
       }
       if (const {'barista', 'baristaAudit', 'pos'}.contains(page) &&
@@ -5222,6 +5225,30 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       setState(() => _profilePhotoBytes = photoBytes);
     } on FirebaseException catch (error, stackTrace) {
       debugPrint('No se pudo cargar la foto del perfil: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _loadUserGender(User user, int authGeneration) async {
+    try {
+      final profile = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final gender = profile.data()?['gender'];
+      if (!mounted ||
+          authGeneration != _authStateGeneration ||
+          _firebaseUser?.uid != user.uid) {
+        return;
+      }
+      setState(() {
+        _userGender =
+            gender is String && (gender == 'male' || gender == 'female')
+                ? gender
+                : null;
+      });
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo cargar el género del perfil: ${error.code}');
       debugPrintStack(stackTrace: stackTrace);
     }
   }
@@ -22465,6 +22492,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     final homeName = authenticatedName != null && authenticatedName.isNotEmpty
         ? authenticatedName
         : 'Lobo';
+    final welcome = switch (_userGender) {
+      'female' => '¡Bienvenida',
+      'male' => '¡Bienvenido',
+      _ => '¡Hola',
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -22482,7 +22514,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '¡Bienvenido, $homeName!',
+                          '$welcome, $homeName!',
                           style: const TextStyle(
                             color: white,
                             fontSize: 23,
