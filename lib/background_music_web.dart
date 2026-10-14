@@ -33,14 +33,16 @@ class BackgroundMusic {
       ..volume = 0.72
       ..preload = 'auto';
 
-    if (howl.readyState < 1) {
-      howl.load();
-      await Future.any([
-        howl.onLoadedMetadata.first,
-        howl.onError.first.then<void>((_) {
-          throw StateError('No se pudieron leer los metadatos del aullido.');
-        }),
-      ]).timeout(const Duration(seconds: 10));
+    howl.currentTime = 0;
+    try {
+      await howl.play().timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      howl.pause();
+      howl.currentTime = 0;
+      throw TimeoutException(
+        'El navegador tardó demasiado en iniciar el aullido.',
+        const Duration(seconds: 2),
+      );
     }
 
     final seconds = howl.duration;
@@ -50,8 +52,6 @@ class BackgroundMusic {
     final duration = Duration(
       microseconds: (seconds * Duration.microsecondsPerSecond).round(),
     );
-    howl.currentTime = 0;
-    await howl.play();
     return duration;
   }
 

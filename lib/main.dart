@@ -4573,7 +4573,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   bool get _canAccessPos =>
       _isStaffRole || (_userRole == 'admin' && _adminPosAccessEnabled);
 
-  static const _minimumSplashDuration = Duration(seconds: 8);
+  static const _minimumSplashDuration = Duration(seconds: 5);
 
   // ----------------------------------------------------------
   // COLORES
@@ -4974,6 +4974,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   Future<void> _startSplashSequence() async {
     if (!widget.enableMusic || !_musicPlayer.isSupported) {
       _splashController.duration = _minimumSplashDuration;
+      setState(() => _splashNeedsGesture = false);
       _splashController.forward();
       return;
     }
@@ -4982,24 +4983,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _splashAudioStarting = true;
       _splashNeedsGesture = false;
     });
+    _splashController.duration = _minimumSplashDuration;
+    _splashController.forward();
     try {
-      final howlDuration = await _musicPlayer.playHowl();
-      if (!mounted) return;
-      _splashController.duration = howlDuration > _minimumSplashDuration
-          ? howlDuration
-          : _minimumSplashDuration;
+      await _musicPlayer.playHowl();
     } catch (error, stackTrace) {
       debugPrint('No se pudo iniciar el aullido de la Splash Screen: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (mounted) {
-        setState(() => _splashNeedsGesture = true);
-      }
     } finally {
       if (mounted) {
         setState(() => _splashAudioStarting = false);
       }
     }
-    if (mounted && !_splashNeedsGesture) _splashController.forward();
   }
 
   Future<void> _playMusic() async {
