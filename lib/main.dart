@@ -29579,13 +29579,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       currentIndex: selectedIndex,
       onTap: (index) => go(destinations[index]),
       type: BottomNavigationBarType.fixed,
-      backgroundColor: card,
+      backgroundColor: const Color(0xFF211A17),
       selectedItemColor: gold,
-      unselectedItemColor: gold,
+      unselectedItemColor: const Color(0xFFD6C7B9),
       selectedFontSize: 10,
       unselectedFontSize: 10,
-      selectedLabelStyle: const TextStyle(color: cream),
-      unselectedLabelStyle: const TextStyle(color: cream),
+      selectedLabelStyle: const TextStyle(color: Color(0xFFF2E9DF)),
+      unselectedLabelStyle: const TextStyle(color: Color(0xFFF2E9DF)),
       items: const [
         BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined), label: 'Inicio'),
