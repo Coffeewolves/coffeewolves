@@ -14,6 +14,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:local_auth/local_auth.dart';
 
 import 'chat_credit_service.dart';
+import 'garra_icon.dart';
 import 'username_registry_service.dart';
 
 const _maxProfileImageBytes = 200 * 1024;
@@ -1248,7 +1249,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
         ),
         child: Row(
           children: [
-            Icon(icon, color: _gold, size: 19),
+            WolvesIcon(icon: icon, color: _gold, size: 19),
             const SizedBox(width: 10),
             Expanded(
               child: Column(

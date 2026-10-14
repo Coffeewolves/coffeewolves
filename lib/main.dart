@@ -18772,6 +18772,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         final orderId = data['orderId'] as String?;
                         final customerEmail = data['customerEmail'] as String?;
                         final customerUid = data['customerUid'] as String?;
+                        final customerContact = customerEmail?.trim();
+                        final customerId = customerUid?.trim();
                         final attachmentBase64 =
                             data['attachmentBase64'] as String?;
                         final attachmentName =
@@ -18874,9 +18876,17 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                               ],
                               const SizedBox(height: 5),
                               Text(
-                                'Contacto: ${customerEmail ?? customerUid ?? 'No disponible'}',
+                                'Contacto: ${customerContact?.isNotEmpty == true ? customerContact : 'No disponible'}',
                                 style: const TextStyle(
                                   color: cream2,
+                                  fontSize: 9,
+                                ),
+                              ),
+                              SelectableText(
+                                'ID de usuario: '
+                                '${customerId?.isNotEmpty == true ? customerId : 'No disponible'}',
+                                style: const TextStyle(
+                                  color: gold,
                                   fontSize: 9,
                                 ),
                               ),
@@ -28344,8 +28354,15 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       prefixIcon: Icon(Icons.badge_outlined),
                     ),
                     child: SelectableText(
-                      user?.uid ?? 'Inicia sesión para identificar tu caso',
-                      style: const TextStyle(color: muted, fontSize: 12),
+                      user == null
+                          ? 'Inicia sesión para consultar tu ID'
+                          : user.uid,
+                      maxLines: null,
+                      style: const TextStyle(
+                        color: gold,
+                        fontSize: 12,
+                        letterSpacing: 0.7,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 10),
