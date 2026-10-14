@@ -12060,7 +12060,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                                       : () => unawaited(
                                             _startSplashSequence(),
                                           ),
-                                  icon: const Icon(Icons.pets, size: 18),
+                                  icon: const WolvesIcon(
+                                    icon: BrandIcons.garra,
+                                    color: gold,
+                                    size: 18,
+                                  ),
                                   label: const Text('UNIRSE A LA MANADA'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: gold,
