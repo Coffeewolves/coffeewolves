@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +24,7 @@ void main() {
     final compressed = compressProfileImageBytes(sourceBytes);
 
     expect(compressed.length, lessThanOrEqualTo(200 * 1024));
+    expect(base64Encode(compressed).length, lessThanOrEqualTo(273100));
     expect(compressed[0], 0xff);
     expect(compressed[1], 0xd8);
     final decoded = img.decodeJpg(compressed);

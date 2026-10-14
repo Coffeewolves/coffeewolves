@@ -145,27 +145,15 @@ internos deben desplegarse antes de usar esas funciones.
 El registro de usuarios envía un enlace de verificación de Firebase
 Authentication y no abre la app hasta que el correo se confirme. El documento
 `users/{uid}` comienza con `isVerified: false`; el cliente no puede cambiar ese
-campo. La insignia azul solo aparece después de que una función backend
-comprueba que el correo está verificado y que Cloud Vision detectó un rostro y
-no encontró categorías SafeSearch de riesgo alto. La opción para tomar una
-selfie está disponible en el perfil de clientes y en el TPV para personal
-autenticado. La moderación no prueba identidad legal ni que la persona sea
-quien aparece en la imagen.
-
-Para habilitar la moderación real de fotos, configura Firebase Storage en el
-proyecto y Cloud Vision API con facturación. Guarda la clave de Cloud Vision
-como secreto de Functions (restringida a esa API; nunca la pongas en Flutter):
-
-```sh
-firebase functions:secrets:set GOOGLE_CLOUD_VISION_API_KEY
-firebase deploy --only functions,firestore:rules,storage
-```
-
-La función `moderateProfilePhoto` no verifica fotos si el secreto/API o el
-bucket no están configurados; en esos casos informa un error y no concede la
-insignia. Las reglas de Storage deniegan escrituras directas del cliente; solo
-la función guarda la imagen después de moderarla. La llamada callable se
-limita a usuarios con sesión y correo verificado.
+campo. La foto de perfil se comprime como JPEG a un máximo de 200 KiB y se
+guarda en los campos `profilePhotoBase64` y `profilePhotoUpdatedAt` del documento
+`users/{uid}`. Las reglas de Firestore limitan esa escritura al perfil propio
+de una cuenta verificada; este flujo no necesita Firebase Storage ni Cloud
+Functions. La foto se muestra como avatar, pero por sí sola no valida identidad
+ni concede la insignia azul, que sigue siendo controlada por el backend.
+Si una cuenta verificada aún no tiene documento de perfil, puede crear uno
+mínimo con rol `user` para habilitar el registro de recompensas; las reglas no
+permiten elevar ese rol desde el cliente.
 
 En iOS/Android, el registro solicita autenticación biométrica cuando el
 dispositivo tiene biometría configurada. Es una comprobación local opcional:

@@ -1480,6 +1480,17 @@ service cloud.firestore {
         && (
           request.auth.token.firebase.sign_in_provider == 'anonymous'
           || (
+            (
+              request.auth.token.email_verified == true
+              || request.auth.token.phone_number is string
+            )
+            && request.resource.data.keys().hasOnly([
+              'email', 'displayName', 'role', 'createdAt', 'isVerified'
+            ])
+            && request.resource.data.role == 'user'
+            && request.resource.data.displayName.size() <= 120
+          )
+          || (
             request.resource.data.keys().hasAll([
               'firstName', 'lastName', 'username', 'role', 'birthDate',
               'phoneNumber', 'phoneCountryCode', 'phoneCountryIsoCode',
@@ -1601,7 +1612,22 @@ service cloud.firestore {
         ) || (
               request.auth != null
           && request.auth.uid == userId
-          && !('messageCredits' in resource.data)
+              && (
+                request.auth.token.email_verified == true
+                || request.auth.token.phone_number is string
+              )
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['profilePhotoBase64', 'profilePhotoUpdatedAt'])
+              && request.resource.data.profilePhotoBase64 is string
+              && request.resource.data.profilePhotoBase64.size() <= 273100
+              && request.resource.data.profilePhotoBase64.matches(
+                '^/9j/[A-Za-z0-9+/]*={0,2}$'
+              )
+              && request.resource.data.profilePhotoUpdatedAt == request.time
+        ) || (
+              request.auth != null
+              && request.auth.uid == userId
+              && !('messageCredits' in resource.data)
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['messageCredits', 'messageCreditsUpdatedAt'])
           && request.resource.data.messageCredits is int

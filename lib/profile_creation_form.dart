@@ -5,7 +5,6 @@ import 'package:country_code_picker/country_code_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -47,6 +46,17 @@ Uint8List compressProfileImageBytes(Uint8List sourceBytes) {
   throw const FormatException(
     'No se pudo reducir la foto a menos de 200 KB. Elige otra imagen.',
   );
+}
+
+Uint8List? _decodeProfilePhoto(Object? encodedPhoto) {
+  if (encodedPhoto is! String || encodedPhoto.isEmpty) return null;
+  try {
+    return base64Decode(encodedPhoto);
+  } on FormatException catch (error, stackTrace) {
+    debugPrint('La foto almacenada del perfil no es válida: $error');
+    debugPrintStack(stackTrace: stackTrace);
+    return null;
+  }
 }
 
 enum ProfileAuthMode { signIn, register }
@@ -523,7 +533,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       final bytes = await compute(compressProfileImageBytes, sourceBytes);
       if (!mounted) return;
       setState(() => _avatarBytes = bytes);
-      await _moderateAndSaveAvatar(user, bytes);
+      await _saveAvatar(user, bytes);
     } catch (error, stackTrace) {
       debugPrint('No se pudo seleccionar la foto de perfil: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -547,18 +557,21 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
           'lo solicite. Si ya lo bloqueaste, cambia el permiso de Cámara en '
           'la configuración del sitio. También puedes elegir una foto.';
     }
-    if (error is FirebaseFunctionsException &&
-        error.message == 'profile-photo-rejected') {
-      return 'No pudimos aprobar esta foto. Acércate al Coffee Wolves que te '
-          'quede más cerca y nuestro equipo te ayudará a verificarla.';
+    if (error is FirebaseException) {
+      return 'No se pudo guardar la foto (${error.code}). '
+          'Inténtalo de nuevo.';
     }
-    if (error is FirebaseFunctionsException &&
-        error.code == 'failed-precondition') {
-      return 'Confirma tu identidad por correo o teléfono antes de subir '
-          'una foto de perfil.';
+    if (error is FirebaseFunctionsException) {
+      return 'No se pudo completar la operación (${error.code}). '
+          'Inténtalo de nuevo.';
     }
-    return 'No pudimos verificar la foto ahora. Acércate al Coffee Wolves '
-        'que te quede más cerca y nuestro equipo te ayudará.';
+    if (error is StateError) {
+      return error.message.toString();
+    }
+    if (error is FormatException) {
+      return error.message.toString();
+    }
+    return 'No se pudo guardar la foto de perfil. Inténtalo de nuevo.';
   }
 
   Future<bool> _authenticateOnDeviceIfAvailable() async {
@@ -590,17 +603,16 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
     }
   }
 
-  Future<void> _moderateAndSaveAvatar(User user, Uint8List bytes) async {
+  Future<void> _saveAvatar(User user, Uint8List bytes) async {
     if (!_hasVerifiedIdentity(user)) {
-      throw FirebaseFunctionsException(
-        code: 'failed-precondition',
-        message: 'Confirma tu identidad por correo o teléfono.',
+      throw StateError(
+        'Confirma tu identidad por correo o teléfono antes de subir '
+        'una foto de perfil.',
       );
     }
     if (bytes.length > _maxProfileImageBytes) {
-      throw FirebaseFunctionsException(
-        code: 'invalid-argument',
-        message: 'La imagen supera el límite de 200 KB.',
+      throw const FormatException(
+        'La imagen supera el límite de 200 KB.',
       );
     }
     if (mounted) {
@@ -610,31 +622,28 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
       });
     }
     try {
-      final callable = FirebaseFunctions.instanceFor(
-        region: 'us-central1',
-      ).httpsCallable('moderateProfilePhoto');
-      final result = await callable.call<Map<String, dynamic>>({
-        'imageBase64': base64Encode(bytes),
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+        'profilePhotoBase64': base64Encode(bytes),
+        'profilePhotoUpdatedAt': FieldValue.serverTimestamp(),
       });
-      final path = result.data['path'];
-      if (path is! String || path.isEmpty) {
-        throw StateError('La moderación no devolvió la ruta de la foto.');
-      }
-      final photoUrl =
-          await FirebaseStorage.instance.ref(path).getDownloadURL();
-      await user.updatePhotoURL(photoUrl);
-      await user.reload();
       if (!mounted) return;
       widget.onAvatarSelected?.call(bytes);
       setState(() {
         _isLoading = false;
-        _errorMessage = 'Foto aprobada y perfil verificado por correo.';
+        _errorMessage = 'Foto guardada en tu perfil.';
       });
-    } on FirebaseFunctionsException {
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo guardar la foto del perfil: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
       if (!mounted) rethrow;
       setState(() => _isLoading = false);
       rethrow;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Error al guardar la foto del perfil: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted) setState(() => _isLoading = false);
       rethrow;
     }
@@ -784,7 +793,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
         return;
       }
       if (_avatarBytes != null) {
-        await _moderateAndSaveAvatar(refreshedUser, _avatarBytes!);
+        await _saveAvatar(refreshedUser, _avatarBytes!);
       }
       if (_isRegistering && !refreshedUser.isAnonymous) {
         if (mounted) {
@@ -1046,6 +1055,8 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
         final phone =
             storedPhone?.isNotEmpty == true ? storedPhone : user.phoneNumber;
         final birthDate = profile?['birthDate'] ?? profile?['dateOfBirth'];
+        final profilePhotoBytes =
+            _decodeProfilePhoto(profile?['profilePhotoBase64']);
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -1066,10 +1077,10 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
               child: CircleAvatar(
                 radius: 44,
                 backgroundColor: _panel,
-                child: user.photoURL?.isNotEmpty == true
+                child: profilePhotoBytes != null
                     ? ClipOval(
-                        child: Image.network(
-                          user.photoURL!,
+                        child: Image.memory(
+                          profilePhotoBytes,
                           width: 88,
                           height: 88,
                           fit: BoxFit.cover,
@@ -1081,11 +1092,26 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
                           ),
                         ),
                       )
-                    : const Icon(
-                        Icons.person_outline,
-                        color: _gold,
-                        size: 36,
-                      ),
+                    : user.photoURL?.isNotEmpty == true
+                        ? ClipOval(
+                            child: Image.network(
+                              user.photoURL!,
+                              width: 88,
+                              height: 88,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Icon(
+                                Icons.person_outline,
+                                color: _gold,
+                                size: 36,
+                              ),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.person_outline,
+                            color: _gold,
+                            size: 36,
+                          ),
               ),
             ),
             const SizedBox(height: 10),

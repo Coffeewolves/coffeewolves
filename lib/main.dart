@@ -5213,6 +5213,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     setState(() {
       _authStateReady = true;
       _authStateError = null;
+      if (_firebaseUser?.uid != user?.uid) {
+        _profilePhotoBytes = null;
+      }
       _firebaseUser = user;
       _userRole = 'user';
       _isLoadingRole = user != null;
@@ -5340,6 +5343,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 'No se pudo preparar tu perfil para registrar recompensas.');
           }
         }
+        await _loadProfilePhoto(activeUser, authGeneration);
       }
       if (const {'barista', 'baristaAudit', 'pos'}.contains(page) &&
           !const {'barista', 'cajero'}.contains(authorizedRole)) {
@@ -5401,6 +5405,34 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         'isVerified': false,
       });
     });
+  }
+
+  Future<void> _loadProfilePhoto(User user, int authGeneration) async {
+    try {
+      final profile = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final encodedPhoto = profile.data()?['profilePhotoBase64'];
+      Uint8List? photoBytes;
+      if (encodedPhoto is String && encodedPhoto.isNotEmpty) {
+        try {
+          photoBytes = base64Decode(encodedPhoto);
+        } on FormatException catch (error, stackTrace) {
+          debugPrint('La foto del perfil guardada no es válida: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+      }
+      if (!mounted ||
+          authGeneration != _authStateGeneration ||
+          _firebaseUser?.uid != user.uid) {
+        return;
+      }
+      setState(() => _profilePhotoBytes = photoBytes);
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo cargar la foto del perfil: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   void _subscribePassportProgress(User user) {
