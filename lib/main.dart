@@ -24449,40 +24449,46 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           ),
           const SizedBox(height: 20),
           _experienceTile(
-            Icons.local_cafe_outlined,
+            Icons.local_cafe,
             'Coffee Passport',
             'Colecciona métodos y desbloquea recompensas.',
             () => go('passport'),
+            imageAsset: 'assets/images/experience_icons/passport.png',
           ),
           _experienceTile(
-            Icons.event_outlined,
+            Icons.event,
             'Eventos',
             'Coffee tastings, pet meet-ups y workshops.',
             () => go('events'),
+            imageAsset: 'assets/images/experience_icons/events.png',
           ),
           _experienceTile(
-            Icons.flag_outlined,
+            Icons.flag,
             'Retos diarios',
             'Completa actividades y gana XP.',
             () => go('challenges'),
+            imageAsset: 'assets/images/experience_icons/challenges.png',
           ),
           _experienceTile(
-            Icons.workspace_premium_outlined,
+            Icons.workspace_premium,
             'Rewards',
             'Canjea tus puntos y beneficios.',
             () => go('rewards'),
+            imageAsset: 'assets/images/experience_icons/rewards.png',
           ),
           _experienceTile(
-            Icons.emoji_events_outlined,
+            Icons.emoji_events,
             'Badges',
             'Colecciona insignias Wolves.',
             () => go('badges'),
+            imageAsset: 'assets/images/experience_icons/badges.png',
           ),
           _experienceTile(
-            Icons.bar_chart_outlined,
+            Icons.bar_chart,
             'Estadísticas',
             'Mira tu evolución en la manada.',
             () => go('stats'),
+            imageAsset: 'assets/images/experience_icons/stats.png',
           ),
         ],
       ),
@@ -30191,16 +30197,29 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     IconData icon,
     String title,
     String subtitle,
-    VoidCallback onTap,
-  ) {
+    VoidCallback onTap, {
+    String? imageAsset,
+  }) {
     return ListTile(
       onTap: onTap,
       contentPadding: EdgeInsets.zero,
-      leading: SizedBox(
-        width: 62,
-        height: 62,
-        child: Icon(icon, size: 34, color: gold),
-      ),
+      leading: imageAsset == null
+          ? SizedBox(
+              width: 62,
+              height: 62,
+              child: Icon(icon, size: 34, color: gold),
+            )
+          : Image.asset(
+              imageAsset,
+              width: 62,
+              height: 62,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => SizedBox(
+                width: 62,
+                height: 62,
+                child: Icon(icon, size: 34, color: gold),
+              ),
+            ),
       title: Text(title,
           style: const TextStyle(color: white, fontWeight: FontWeight.bold)),
       subtitle: Text(subtitle, style: const TextStyle(color: muted)),
