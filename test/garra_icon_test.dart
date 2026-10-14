@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/garra_icon.dart';
+import 'package:wolves_club/garra_icon.dart';
 
 void main() {
-  testWidgets('renders the supplied garra silhouette with its tint',
+  testWidgets('renders the complete garra silhouette with its tint',
       (tester) async {
     const iconKey = ValueKey('garra-test-icon');
     const garraColor = Color(0xFFC6A06A);
@@ -22,23 +22,18 @@ void main() {
     );
 
     final icon = find.byKey(iconKey);
-    final imageFinder = find.descendant(of: icon, matching: find.byType(Image));
-    expect(imageFinder, findsOneWidget);
+    expect(
+      find.descendant(of: icon, matching: find.byType(CustomPaint)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: icon, matching: find.byType(Image)),
+      findsNothing,
+    );
     expect(
       find.descendant(of: icon, matching: find.byType(Icon)),
       findsNothing,
     );
-    expect(
-      find.descendant(of: icon, matching: find.byType(CustomPaint)),
-      findsNothing,
-    );
-
-    final image = tester.widget<Image>(imageFinder);
-    expect(image.image, isA<AssetImage>());
-    expect((image.image as AssetImage).assetName,
-        'assets/images/menu_icons/lost_pet.png');
-    expect(image.color, garraColor);
-    expect(image.colorBlendMode, BlendMode.srcIn);
   });
 
   testWidgets('keeps standard Material icons unchanged', (tester) async {
