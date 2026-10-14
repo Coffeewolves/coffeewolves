@@ -102,7 +102,7 @@ class FirebaseStartupFailure extends StatelessWidget {
                     'No se pudo iniciar Coffee Wolves',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Color(0xFFE9DCCB),
+                      color: Color(0xFFC6A574),
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
                     ),
@@ -495,7 +495,7 @@ class _PackDogCardState extends State<_PackDogCard> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Color(0xFFFAF6F0),
+                            color: Color(0xFFC6A574),
                             fontSize: 21,
                             fontWeight: FontWeight.w700,
                           ),
@@ -516,7 +516,7 @@ class _PackDogCardState extends State<_PackDogCard> {
                         Text(
                           dog.age.toUpperCase(),
                           style: const TextStyle(
-                            color: Color(0xFFE9DCCB),
+                            color: Color(0xFFC6A574),
                             fontSize: 10,
                             letterSpacing: 0.7,
                             fontWeight: FontWeight.w600,
@@ -571,7 +571,7 @@ class _PackDogCardState extends State<_PackDogCard> {
             Text(
               dog.name,
               style: const TextStyle(
-                color: Color(0xFFFAF6F0),
+                color: Color(0xFFC6A574),
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
@@ -591,7 +591,7 @@ class _PackDogCardState extends State<_PackDogCard> {
               dog.age,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFFE9DCCB),
+                color: Color(0xFFC6A574),
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -4378,11 +4378,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   static const bg = Color(0xFF080A0B);
   static const card = Color(0xFF111619);
   static const card2 = Color(0xFF292D31);
-  static const cream = Color(0xFFF2E8D8);
+  static const cream = Color(0xFFC6A574);
   static const cream2 = Color(0xFFCDB79F);
   static const brown = Color(0xFF9A7D68);
   static const brownDark = Color(0xFF49372D);
-  static const white = Color(0xFFFAF6F0);
+  static const white = Color(0xFFC6A574);
   static const muted = Color(0xFFADB3B8);
   static const green = Color(0xFF70B58A);
   static const gold = Color(0xFFC6A574);
@@ -11047,17 +11047,39 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         brightness: Brightness.dark,
         scaffoldBackgroundColor: bg,
         fontFamily: 'Montserrat',
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(fontWeight: FontWeight.w300),
-          bodyMedium: TextStyle(fontWeight: FontWeight.w300),
-          bodySmall: TextStyle(fontWeight: FontWeight.w300),
-          labelLarge: TextStyle(fontWeight: FontWeight.w300),
-          labelMedium: TextStyle(fontWeight: FontWeight.w300),
-          labelSmall: TextStyle(fontWeight: FontWeight.w300),
-        ),
+        iconTheme: const IconThemeData(color: gold),
+        textTheme: ThemeData.dark().textTheme
+            .apply(bodyColor: gold, displayColor: gold)
+            .copyWith(
+              bodyLarge: const TextStyle(
+                color: gold,
+                fontWeight: FontWeight.w300,
+              ),
+              bodyMedium: const TextStyle(
+                color: gold,
+                fontWeight: FontWeight.w300,
+              ),
+              bodySmall: const TextStyle(
+                color: gold,
+                fontWeight: FontWeight.w300,
+              ),
+              labelLarge: const TextStyle(
+                color: gold,
+                fontWeight: FontWeight.w300,
+              ),
+              labelMedium: const TextStyle(
+                color: gold,
+                fontWeight: FontWeight.w300,
+              ),
+              labelSmall: const TextStyle(
+                color: gold,
+                fontWeight: FontWeight.w300,
+              ),
+            ),
         colorScheme: const ColorScheme.dark(
-          primary: cream,
+          primary: gold,
           surface: bg,
+          onSurface: gold,
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
@@ -31699,7 +31721,7 @@ class _ColdBrewFigureBadgeState extends State<_ColdBrewFigureBadge>
   late final AnimationController _spinController;
 
   static const _gold = Color(0xFFC6A574);
-  static const _cream = Color(0xFFF2E8D8);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFADB3B8);
 
   @override

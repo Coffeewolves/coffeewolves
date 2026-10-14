@@ -32,7 +32,7 @@ class _LostPetScreenState extends State<LostPetScreen> {
   static const _background = Color(0xFF15120F);
   static const _panel = Color(0xFF211D19);
   static const _gold = Color(0xFFC6A06A);
-  static const _cream = Color(0xFFE9DCCB);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFB7AA9D);
 
   final _service = LostPetService();
@@ -1266,7 +1266,7 @@ class _LostPetScreenState extends State<LostPetScreen> {
                                   ),
                                   icon: const Icon(
                                     Icons.close,
-                                    color: Colors.white,
+                                    color: _cream,
                                   ),
                                   style: IconButton.styleFrom(
                                     backgroundColor: Colors.black54,
@@ -1628,7 +1628,7 @@ class _MissionDetailsSheet extends StatefulWidget {
 
 class _MissionDetailsSheetState extends State<_MissionDetailsSheet> {
   static const _gold = Color(0xFFC6A06A);
-  static const _cream = Color(0xFFE9DCCB);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFB7AA9D);
   bool _busy = false;
   String? _error;
@@ -2292,7 +2292,7 @@ class _MissionEditorScreenState extends State<_MissionEditorScreen> {
   static const _background = Color(0xFF15120F);
   static const _panel = Color(0xFF211D19);
   static const _gold = Color(0xFFC6A06A);
-  static const _cream = Color(0xFFE9DCCB);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFB7AA9D);
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
@@ -2710,7 +2710,7 @@ class _MissionEditorScreenState extends State<_MissionEditorScreen> {
                         child: IconButton(
                           onPressed: () =>
                               setState(() => _photos.removeAt(index)),
-                          icon: const Icon(Icons.close, color: Colors.white),
+                          icon: const Icon(Icons.close, color: _cream),
                           style: IconButton.styleFrom(
                             backgroundColor: Colors.black54,
                             minimumSize: const Size(28, 28),
@@ -2813,7 +2813,7 @@ class _SightingEditorScreenState extends State<_SightingEditorScreen> {
   static const _background = Color(0xFF15120F);
   static const _panel = Color(0xFF211D19);
   static const _gold = Color(0xFFC6A06A);
-  static const _cream = Color(0xFFE9DCCB);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFB7AA9D);
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
@@ -3221,7 +3221,7 @@ class _EmptyState extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFFE9DCCB),
+                color: Color(0xFFC6A574),
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
               ),

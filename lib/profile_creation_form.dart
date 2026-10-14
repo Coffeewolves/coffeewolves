@@ -101,7 +101,7 @@ class _ProfileAuthFormState extends State<ProfileAuthForm> {
   String? _errorMessage;
 
   static const _gold = Color(0xFFC6A06A);
-  static const _cream = Color(0xFFE9DCCB);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFB7AA9D);
   static const _panel = Color(0xFF211D19);
   static const _blockedUsernameWords = {
@@ -1788,7 +1788,7 @@ class _MissingCustomerProfileForm extends StatefulWidget {
 class _MissingCustomerProfileFormState
     extends State<_MissingCustomerProfileForm> {
   static const _gold = Color(0xFFC6A06A);
-  static const _cream = Color(0xFFE9DCCB);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFB7AA9D);
   static const _panel = Color(0xFF211D19);
 

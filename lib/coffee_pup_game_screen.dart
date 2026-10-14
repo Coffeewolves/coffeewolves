@@ -18,7 +18,7 @@ class CoffeePupGameScreen extends StatefulWidget {
 
 class _CoffeePupGameScreenState extends State<CoffeePupGameScreen> {
   static const _coffee = Color(0xFF76533C);
-  static const _cream = Color(0xFFFFF8EF);
+  static const _cream = Color(0xFFC6A574);
   static const _pink = Color(0xFFF2D9D0);
   static const _sage = Color(0xFFDCE8D8);
   static const _ink = Color(0xFF33271F);
@@ -743,7 +743,7 @@ class _CoffeePupGameScreenState extends State<CoffeePupGameScreen> {
                               ),
                       style: FilledButton.styleFrom(
                         backgroundColor: _coffee,
-                        foregroundColor: Colors.white,
+                        foregroundColor: _cream,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                       icon: _showingAd
@@ -752,7 +752,7 @@ class _CoffeePupGameScreenState extends State<CoffeePupGameScreen> {
                               height: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: _cream,
                               ),
                             )
                           : const Icon(Icons.play_circle_outline),

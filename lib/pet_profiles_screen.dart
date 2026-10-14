@@ -39,7 +39,7 @@ class PetProfilesScreen extends StatefulWidget {
 
 class _PetProfilesScreenState extends State<PetProfilesScreen> {
   static const _card = Color(0xFF111619);
-  static const _cream = Color(0xFFF2E8D8);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFADB3B8);
   static const _gold = Color(0xFFC6A574);
 
@@ -500,7 +500,7 @@ class _PetProfilesScreenState extends State<PetProfilesScreen> {
           child: IconButton(
             onPressed: onRemove,
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.cancel, color: Colors.white, size: 18),
+            icon: const Icon(Icons.cancel, color: Color(0xFFC6A574), size: 18),
           ),
         ),
       ],

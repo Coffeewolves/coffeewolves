@@ -29,7 +29,7 @@ class _MischiefWallScreenState extends State<MischiefWallScreen> {
   static const _background = Color(0xFF15120F);
   static const _panel = Color(0xFF211D19);
   static const _gold = Color(0xFFC6A06A);
-  static const _cream = Color(0xFFE9DCCB);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFB7AA9D);
 
   final _service = MischiefWallService();
@@ -845,7 +845,7 @@ class _MischiefVideoPlayerState extends State<_MischiefVideoPlayer> {
               else if (_controller == null || !_controller!.value.isPlaying)
                 const CircleAvatar(
                   backgroundColor: Color(0x99000000),
-                  foregroundColor: Color(0xFFE9DCCB),
+                  foregroundColor: Color(0xFFC6A574),
                   radius: 30,
                   child: Icon(Icons.play_arrow, size: 42),
                 ),
@@ -903,7 +903,7 @@ class _MischiefNativeAdState extends State<_MischiefNativeAd> {
           size: 14,
         ),
         primaryTextStyle: NativeTemplateTextStyle(
-          textColor: const Color(0xFFE9DCCB),
+          textColor: const Color(0xFFC6A574),
           style: NativeTemplateFontStyle.bold,
           size: 16,
         ),

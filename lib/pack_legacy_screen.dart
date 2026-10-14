@@ -22,7 +22,7 @@ class PackLegacyScreen extends StatefulWidget {
 class _PackLegacyScreenState extends State<PackLegacyScreen> {
   static const _card = Color(0xFF111619);
   static const _gold = Color(0xFFC6A574);
-  static const _cream = Color(0xFFF2E8D8);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFADB3B8);
 
   CollectionReference<Map<String, dynamic>> get _profiles =>
@@ -530,7 +530,7 @@ class _PackLegacyProfileDialog extends StatefulWidget {
 }
 
 class _PackLegacyProfileDialogState extends State<_PackLegacyProfileDialog> {
-  static const _cream = Color(0xFFF2E8D8);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFADB3B8);
 
   late final TextEditingController _memberName;

@@ -32,7 +32,7 @@ class _WolvesMatchScreenState extends State<WolvesMatchScreen>
   static const _background = Color(0xFF080A0B);
   static const _card = Color(0xFF111619);
   static const _gold = Color(0xFFC6A574);
-  static const _cream = Color(0xFFF2E8D8);
+  static const _cream = Color(0xFFC6A574);
   static const _muted = Color(0xFFADB3B8);
   static const _interestOptions = [
     'Café de especialidad',
@@ -1952,7 +1952,7 @@ class _MatchIcebreakerDialogState extends State<_MatchIcebreakerDialog> {
                   _question.prompt,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                    color: Color(0xFFF2E8D8),
+                    color: Color(0xFFC6A574),
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1968,7 +1968,7 @@ class _MatchIcebreakerDialogState extends State<_MatchIcebreakerDialog> {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: ownIndex == index
                             ? const Color(0xFFC6A574)
-                            : const Color(0xFFF2E8D8),
+                            : const Color(0xFFC6A574),
                         side: BorderSide(
                           color: ownIndex == index
                               ? const Color(0xFFC6A574)
@@ -2015,7 +2015,7 @@ class _MatchIcebreakerDialogState extends State<_MatchIcebreakerDialog> {
                                 '${_question.options[peerIndex]}',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
-                          color: Color(0xFFF2E8D8),
+                          color: Color(0xFFC6A574),
                           fontSize: 12,
                         ),
                       );
