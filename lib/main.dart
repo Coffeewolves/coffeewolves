@@ -10,6 +10,7 @@ import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart' show compute, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart' as fa;
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as image_codec;
 import 'package:qr_flutter/qr_flutter.dart';
@@ -621,6 +622,15 @@ class _SocialBrandIcon extends StatelessWidget {
 
   final String name;
 
+  IconData get _icon => switch (name) {
+        'Facebook' => fa.FontAwesomeIcons.facebookF,
+        'Instagram' => fa.FontAwesomeIcons.instagram,
+        'TikTok' => fa.FontAwesomeIcons.tiktok,
+        'WhatsApp' => fa.FontAwesomeIcons.whatsapp,
+        'Web' => fa.FontAwesomeIcons.globe,
+        _ => fa.FontAwesomeIcons.globe,
+      };
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -633,229 +643,14 @@ class _SocialBrandIcon extends StatelessWidget {
         ),
       ),
       alignment: Alignment.center,
-      child: CustomPaint(
-        size: const Size(17, 17),
-        painter: _SocialBrandPainter(name),
+      child: fa.FaIcon(
+        _icon,
+        color: const Color(0xFFD1BC98),
+        size: 15,
+        semanticLabel: name,
       ),
     );
   }
-}
-
-class _SocialBrandPainter extends CustomPainter {
-  const _SocialBrandPainter(this.name);
-
-  final String name;
-
-  static const _bronze = Color(0xFFB49A70);
-  static const _highlight = Color(0xFFD1BC98);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    switch (name) {
-      case 'Facebook':
-        _paintFacebook(canvas, size);
-        break;
-      case 'Instagram':
-        _paintInstagram(canvas, size);
-        break;
-      case 'TikTok':
-        _paintTikTok(canvas, size);
-        break;
-      case 'WhatsApp':
-        _paintWhatsApp(canvas, size);
-        break;
-    }
-  }
-
-  void _paintFacebook(Canvas canvas, Size size) {
-    final textPainter = TextPainter(
-      text: const TextSpan(
-        text: 'f',
-        style: TextStyle(
-          color: _highlight,
-          fontSize: 25,
-          fontWeight: FontWeight.w600,
-          fontFamily: 'Georgia',
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    textPainter.paint(
-      canvas,
-      Offset((size.width - textPainter.width) / 2, -1.5),
-    );
-  }
-
-  void _paintInstagram(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final paint = Paint()
-      ..color = _highlight
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.7;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        rect.deflate(2.5),
-        const Radius.circular(6),
-      ),
-      paint,
-    );
-    canvas.drawCircle(
-      rect.center,
-      size.width * 0.2,
-      paint,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.73, size.height * 0.27),
-      1.2,
-      Paint()..color = _bronze,
-    );
-  }
-
-  void _paintTikTok(Canvas canvas, Size size) {
-    final path = Path()
-      ..moveTo(size.width * 0.57, size.height * 0.13)
-      ..lineTo(size.width * 0.57, size.height * 0.66)
-      ..cubicTo(
-        size.width * 0.57,
-        size.height * 0.91,
-        size.width * 0.20,
-        size.height * 0.91,
-        size.width * 0.20,
-        size.height * 0.70,
-      )
-      ..cubicTo(
-        size.width * 0.20,
-        size.height * 0.51,
-        size.width * 0.40,
-        size.height * 0.45,
-        size.width * 0.54,
-        size.height * 0.49,
-      )
-      ..lineTo(size.width * 0.54, size.height * 0.68)
-      ..cubicTo(
-        size.width * 0.40,
-        size.height * 0.59,
-        size.width * 0.34,
-        size.height * 0.69,
-        size.width * 0.39,
-        size.height * 0.76,
-      )
-      ..cubicTo(
-        size.width * 0.47,
-        size.height * 0.84,
-        size.width * 0.55,
-        size.height * 0.75,
-        size.width * 0.55,
-        size.height * 0.66,
-      )
-      ..lineTo(size.width * 0.55, size.height * 0.13)
-      ..cubicTo(
-        size.width * 0.62,
-        size.height * 0.29,
-        size.width * 0.74,
-        size.height * 0.35,
-        size.width * 0.87,
-        size.height * 0.36,
-      )
-      ..lineTo(size.width * 0.87, size.height * 0.53)
-      ..cubicTo(
-        size.width * 0.72,
-        size.height * 0.51,
-        size.width * 0.63,
-        size.height * 0.42,
-        size.width * 0.57,
-        size.height * 0.34,
-      );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = _highlight
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-  }
-
-  void _paintWhatsApp(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = _highlight
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.7
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final bubble = Path()
-      ..moveTo(size.width * 0.17, size.height * 0.86)
-      ..lineTo(size.width * 0.25, size.height * 0.67)
-      ..cubicTo(
-        size.width * 0.12,
-        size.height * 0.42,
-        size.width * 0.29,
-        size.height * 0.12,
-        size.width * 0.54,
-        size.height * 0.12,
-      )
-      ..cubicTo(
-        size.width * 0.80,
-        size.height * 0.12,
-        size.width * 0.94,
-        size.height * 0.32,
-        size.width * 0.94,
-        size.height * 0.54,
-      )
-      ..cubicTo(
-        size.width * 0.94,
-        size.height * 0.80,
-        size.width * 0.71,
-        size.height * 0.94,
-        size.width * 0.48,
-        size.height * 0.89,
-      )
-      ..close();
-    canvas.drawPath(bubble, paint);
-    final handset = Path()
-      ..moveTo(size.width * 0.37, size.height * 0.32)
-      ..cubicTo(
-        size.width * 0.33,
-        size.height * 0.33,
-        size.width * 0.30,
-        size.height * 0.38,
-        size.width * 0.32,
-        size.height * 0.45,
-      )
-      ..cubicTo(
-        size.width * 0.39,
-        size.height * 0.61,
-        size.width * 0.51,
-        size.height * 0.70,
-        size.width * 0.65,
-        size.height * 0.73,
-      )
-      ..cubicTo(
-        size.width * 0.72,
-        size.height * 0.74,
-        size.width * 0.77,
-        size.height * 0.67,
-        size.width * 0.75,
-        size.height * 0.62,
-      )
-      ..lineTo(size.width * 0.63, size.height * 0.56)
-      ..lineTo(size.width * 0.56, size.height * 0.63)
-      ..cubicTo(
-        size.width * 0.47,
-        size.height * 0.59,
-        size.width * 0.41,
-        size.height * 0.52,
-        size.width * 0.39,
-        size.height * 0.45,
-      )
-      ..lineTo(size.width * 0.45, size.height * 0.38);
-    canvas.drawPath(handset, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _SocialBrandPainter oldDelegate) =>
-      oldDelegate.name != name;
 }
 
 class _SocialTexturePainter extends CustomPainter {
@@ -1166,6 +961,7 @@ const _coffeeWolvesSocialLinks = <String, String>{
   'Instagram': 'https://www.instagram.com/coffee_wolves/',
   'TikTok': 'https://www.tiktok.com/@coffeewolves?lang=en',
   'WhatsApp': 'https://wa.me/message/B3UBUOB4ZOY5L1',
+  'Web': 'https://coffeewolves.github.io/coffeewolves/',
 };
 
 enum ShopItemStatus {
@@ -18799,10 +18595,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         final orderId = data['orderId'] as String?;
                         final customerEmail = data['customerEmail'] as String?;
                         final customerUid = data['customerUid'] as String?;
-                        final memberCardId =
-                            data['memberCardId'] is String
-                                ? data['memberCardId'] as String
-                                : null;
+                        final memberCardId = data['memberCardId'] is String
+                            ? data['memberCardId'] as String
+                            : null;
                         final customerContact = customerEmail?.trim();
                         final customerId = customerUid?.trim();
                         final attachmentBase64 =
@@ -30029,28 +29824,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 style: TextStyle(color: muted, fontSize: 11),
               ),
               const SizedBox(height: 15),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 10,
+                runSpacing: 6,
                 children: [
-                  _socialLinkButton(
-                    name: 'Facebook',
-                    url: _coffeeWolvesSocialLinks['Facebook']!,
-                  ),
-                  const SizedBox(width: 15),
-                  _socialLinkButton(
-                    name: 'Instagram',
-                    url: _coffeeWolvesSocialLinks['Instagram']!,
-                  ),
-                  const SizedBox(width: 15),
-                  _socialLinkButton(
-                    name: 'TikTok',
-                    url: _coffeeWolvesSocialLinks['TikTok']!,
-                  ),
-                  const SizedBox(width: 15),
-                  _socialLinkButton(
-                    name: 'WhatsApp',
-                    url: _coffeeWolvesSocialLinks['WhatsApp']!,
-                  ),
+                  for (final entry in _coffeeWolvesSocialLinks.entries)
+                    _socialLinkButton(name: entry.key, url: entry.value),
                 ],
               ),
             ],
