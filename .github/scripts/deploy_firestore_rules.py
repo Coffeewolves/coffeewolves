@@ -66,13 +66,11 @@ def main():
     release_name = f"{project_path}/releases/cloud.firestore"
     release = request_json(
         "PATCH",
-        f"{api_base}/{release_name}?{urlencode({'updateMask': 'ruleset_name'})}",
+        f"{api_base}/{release_name}?{urlencode({'updateMask': 'rulesetName'})}",
         access_token,
         {
-            "release": {
-                "name": release_name,
-                "rulesetName": ruleset_name,
-            },
+            "name": release_name,
+            "rulesetName": ruleset_name,
         },
     )
     if release.get("rulesetName") != ruleset_name:
