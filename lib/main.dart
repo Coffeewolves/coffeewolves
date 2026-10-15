@@ -7053,13 +7053,19 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     var isRequestingAccount = false;
     var requestSubmitted = false;
     String? requestSuccessMessage;
-    var requestedRole = requiredRole == 'admin' ? 'admin' : 'barista';
+    var requestedRole = switch (requiredRole) {
+      'admin' => 'admin',
+      'cocina' => 'cocina',
+      _ => 'barista',
+    };
     String? errorMessage;
     final targetName = requiredRole == 'admin'
         ? 'GERENCIA'
         : requiredRole == 'personal'
             ? 'PERSONAL'
-            : 'SERVICIO · CAJA Y BARRA';
+            : requiredRole == 'cocina'
+                ? 'COCINA'
+                : 'SERVICIO · CAJA Y BARRA';
     ModalRoute<dynamic>? staffDialogRoute;
 
     String formatBirthDate(DateTime date) =>
@@ -7278,9 +7284,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           );
         }
         final role = await _readRoleFromFirestore(firestore, activeStaffUser);
-        final hasRequiredRole = requiredRole == 'personal'
-            ? const {'barista', 'cajero', 'cocina'}.contains(role)
-            : role == requiredRole;
+        final hasRequiredRole = switch (requiredRole) {
+          'personal' => const {'barista', 'cajero', 'cocina'}.contains(role),
+          'barista' => const {'barista', 'cajero'}.contains(role),
+          _ => role == requiredRole,
+        };
         if (!activeStaffUser.emailVerified || !hasRequiredRole) {
           await auth.signOut();
           if (!dialogContext.mounted) return;
@@ -7839,9 +7847,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           );
         }
         final primaryRole = await _readAuthorizedRole(refreshedStaffUser);
-        final hasRequiredRole = requiredRole == 'personal'
-            ? const {'barista', 'cajero', 'cocina'}.contains(primaryRole)
-            : primaryRole == requiredRole;
+        final hasRequiredRole = switch (requiredRole) {
+          'personal' =>
+            const {'barista', 'cajero', 'cocina'}.contains(primaryRole),
+          'barista' => const {'barista', 'cajero'}.contains(primaryRole),
+          _ => primaryRole == requiredRole,
+        };
         if (!refreshedStaffUser.emailVerified || !hasRequiredRole) {
           await FirebaseAuth.instance.signOut();
           final reason = !refreshedStaffUser.emailVerified
@@ -7978,9 +7989,57 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     );
   }
 
-  void _openStaffAccess(BuildContext context) {
-    unawaited(
-      _showStaffLoginDialog(requiredRole: 'personal', hostContext: context),
+  Future<void> _openStaffAccess(BuildContext context) async {
+    final selectedRole = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: gold.withValues(alpha: 0.65)),
+        ),
+        title: const Text(
+          'ACCESO DE PERSONAL',
+          style: TextStyle(
+            color: cream,
+            fontSize: 15,
+            letterSpacing: 1,
+          ),
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: Row(
+            children: [
+              Expanded(
+                child: _StaffAccountTypeCard(
+                  title: 'TPV',
+                  subtitle: 'Atención y ventas',
+                  icon: Icons.point_of_sale_rounded,
+                  selected: false,
+                  enabled: true,
+                  onTap: () => Navigator.of(dialogContext).pop('barista'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StaffAccountTypeCard(
+                  title: 'Cocina',
+                  subtitle: 'Preparar pedidos',
+                  icon: Icons.restaurant_menu_rounded,
+                  selected: false,
+                  enabled: true,
+                  onTap: () => Navigator.of(dialogContext).pop('cocina'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selectedRole == null || !context.mounted) return;
+    await _showStaffLoginDialog(
+      requiredRole: selectedRole,
+      hostContext: context,
     );
   }
 
@@ -11654,7 +11713,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         Expanded(
                           child: _staffAccessButton(
                             key: const ValueKey('staff-pos-login'),
-                            label: 'TPV · Personal',
+                            label: 'Personal',
                             icon: Icons.point_of_sale_outlined,
                             onPressed: () => _openStaffAccess(buttonContext),
                           ),
