@@ -1,8 +1,4545 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    function isManagementRole(role) {
+      return role is string
+        && role.lower() in [
+          'admin', 'gerente', 'gerencia', 'manager', 'management',
+          'administrator'
+        ];
+    }
+
+    function isStaffRole(role) {
+      return role is string && role.lower() in ['barista', 'cajero'];
+    }
+
+    function isKitchenRole(role) {
+      return role is string && role.lower() == 'cocina';
+    }
+
+    function hasValidStaffPersonalData(data) {
+      return data.firstName is string
+        && data.firstName.size() > 0
+        && data.firstName.size() <= 60
+        && data.lastName is string
+        && data.lastName.size() > 0
+        && data.lastName.size() <= 60
+        && data.gender in ['male', 'female']
+        && data.birthDate is string
+        && data.phoneNumber is string
+        && data.phoneNumber.matches('^\\+[1-9][0-9]{6,14}$')
+        && data.phoneCountryCode is string
+        && data.phoneCountryCode.matches('^\\+[1-9][0-9]{0,3}$')
+        && data.phoneCountryIsoCode is string
+        && data.phoneCountryIsoCode.matches('^[A-Z]{2}$')
+        && data.phoneNationalNumber is string
+        && data.phoneNationalNumber.matches('^[0-9]{7,15}$');
+    }
+
+    function createdAtMatchesRequestTime() {
+      let createdAt = request.resource.data.createdAt;
+      return createdAt == request.time;
+    }
+
+    function updatedAtMatchesRequestTime() {
+      let updatedAt = request.resource.data.updatedAt;
+      return updatedAt == request.time;
+    }
+
+    function cafeSaleDocumentPath(saleId) {
+      return /databases/$(database)/documents/cafeSales/$(saleId);
+    }
+
+    function validMemberCardFields(data) {
+      return data.keys().hasOnly([
+          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
+          'sequence', 'createdBy', 'createdAt'
+        ])
+        && data.keys().hasAll([
+          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
+          'sequence', 'createdBy', 'createdAt'
+        ]);
+    }
+
+    function hasManagementOrStaff() {
+      return request.auth != null
+        && (exists(/databases/$(database)/documents/management/$(request.auth.uid))
+          || exists(/databases/$(database)/documents/pos_staff/$(request.auth.uid)));
+    }
+
+    function databaseRole() {
+      let managementPath =
+        /databases/$(database)/documents/management/$(request.auth.uid);
+      let staffPath =
+        /databases/$(database)/documents/pos_staff/$(request.auth.uid);
+      let userPath =
+        /databases/$(database)/documents/users/$(request.auth.uid);
+      let managementRole = exists(managementPath)
+        ? get(managementPath).data.get(
+            'role',
+            get(managementPath).data.get('rol', '')
+          )
+        : '';
+      let staffRole = exists(staffPath)
+        ? get(staffPath).data.get(
+            'role',
+            get(staffPath).data.get('rol', '')
+          )
+        : '';
+      return exists(managementPath)
+        && isManagementRole(managementRole)
+        ? get(managementPath).data.get(
+            'role',
+            get(managementPath).data.get('rol', '')
+          )
+        : exists(staffPath)
+          && (isStaffRole(staffRole) || isKitchenRole(staffRole))
+          ? get(staffPath).data.get(
+              'role',
+              get(staffPath).data.get('rol', '')
+            )
+          : exists(userPath)
+            ? get(userPath).data.get(
+              'role',
+              get(userPath).data.get('rol', '')
+              )
+            : '';
+    }
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && isManagementRole(databaseRole());
+    }
+
+    function validPackLegacyProfile(data) {
+      return data.keys().hasOnly([
+          'memberName', 'petName', 'petBreed', 'story', 'achievements',
+          'experienceTitle', 'experienceDescription', 'photoUrl',
+          'published', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'memberName', 'petName', 'petBreed', 'story', 'achievements',
+          'experienceTitle', 'experienceDescription', 'photoUrl',
+          'published', 'createdAt', 'updatedAt'
+        ])
+        && data.memberName is string
+        && data.memberName.size() > 0
+        && data.memberName.size() <= 80
+        && data.petName is string
+        && data.petName.size() > 0
+        && data.petName.size() <= 80
+        && data.petBreed is string
+        && data.petBreed.size() > 0
+        && data.petBreed.size() <= 80
+        && data.story is string
+        && data.story.size() > 0
+        && data.story.size() <= 3000
+        && data.achievements is list
+        && data.achievements.size() <= 12
+        && data.experienceTitle is string
+        && data.experienceTitle.size() <= 120
+        && data.experienceDescription is string
+        && data.experienceDescription.size() <= 1200
+        && data.photoUrl is string
+        && data.photoUrl.size() <= 1000
+        && (
+          data.photoUrl.size() == 0
+          || data.photoUrl.matches('^https://.*$')
+        )
+        && data.published is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isVerifiedStaff() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && (
+          isStaffRole(databaseRole())
+          || isManagementRole(databaseRole())
+        );
+    }
+
+    function isVerifiedKitchenStaff() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && (
+          isStaffRole(databaseRole())
+          || isKitchenRole(databaseRole())
+          || isManagementRole(databaseRole())
+        );
+    }
+
+    function isVerifiedLostPetMember() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.auth.token.email_verified == true;
+    }
+
+    function isAuthenticatedLostPetMember() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function hasNoPublicContactInfo(value) {
+      return value is string
+        && !value.matches('.*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}.*')
+        && !value.matches('.*[0-9][0-9 ()+.-]{7,}[0-9].*')
+        && !value.matches('.*-?[0-9]{1,3}[.][0-9]{3,}[ ]*,[ ]*-?[0-9]{1,3}[.][0-9]{3,}.*');
+    }
+
+    function validLostPetMission(data) {
+      return data.keys().hasOnly([
+          'ownerUid', 'petName', 'species', 'breed', 'size', 'color', 'sex',
+          'markings', 'missingAt', 'city', 'area', 'lastSeenArea',
+          'description', 'photoCount', 'status',
+          'sightingsCount', 'reunionStory', 'shareReunion',
+          'publicationAuthorized', 'informationIsAccurate', 'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'ownerUid', 'petName', 'species', 'breed', 'size', 'color', 'sex',
+          'markings', 'missingAt', 'city', 'area', 'lastSeenArea',
+          'description', 'photoCount', 'status',
+          'sightingsCount', 'reunionStory', 'shareReunion',
+          'publicationAuthorized', 'informationIsAccurate', 'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerUid == request.auth.uid
+        && data.petName is string
+        && data.petName.size() <= 60
+        && hasNoPublicContactInfo(data.petName)
+        && data.species in ['dog', 'cat', 'other']
+        && data.breed is string
+        && data.breed.size() <= 80
+        && hasNoPublicContactInfo(data.breed)
+        && data.size in ['unknown', 'small', 'medium', 'large']
+        && data.color is string
+        && data.color.size() > 0
+        && data.color.size() <= 80
+        && hasNoPublicContactInfo(data.color)
+        && data.sex in ['unknown', 'female', 'male']
+        && data.markings is string
+        && data.markings.size() <= 400
+        && hasNoPublicContactInfo(data.markings)
+        && data.missingAt is timestamp
+        && data.missingAt <= request.time + duration.value(1, 'd')
+        && data.city is string
+        && data.city.size() > 0
+        && data.city.size() <= 80
+        && hasNoPublicContactInfo(data.city)
+        && data.area is string
+        && data.area.size() > 0
+        && data.area.size() <= 100
+        && hasNoPublicContactInfo(data.area)
+        && data.lastSeenArea is string
+        && data.lastSeenArea.size() > 0
+        && data.lastSeenArea.size() <= 150
+        && hasNoPublicContactInfo(data.lastSeenArea)
+        && data.description is string
+        && data.description.size() > 0
+        && data.description.size() <= 800
+        && hasNoPublicContactInfo(data.description)
+        && data.photoCount is int
+        && data.photoCount >= 1
+        && data.photoCount <= 3
+        && data.status in [
+          'active', 'sightings', 'verifying', 'reunited', 'closed'
+        ]
+        && data.sightingsCount is int
+        && data.sightingsCount >= 0
+        && data.reunionStory is string
+        && data.reunionStory.size() <= 400
+        && data.shareReunion is bool
+        && (
+          data.shareReunion == false
+          && data.reunionStory == ''
+          || data.shareReunion == true
+          && data.status == 'reunited'
+        )
+        && data.publicationAuthorized == true
+        && data.informationIsAccurate == true
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function validLostPetSighting(data) {
+      return data.keys().hasOnly([
+          'missionId', 'description', 'species', 'color',
+          'size', 'sightedAt', 'city', 'area', 'direction', 'additionalInfo',
+          'photoBase64', 'verificationStatus', 'createdAt'
+        ])
+        && data.keys().hasAll([
+          'missionId', 'description', 'species', 'color',
+          'size', 'sightedAt', 'city', 'area', 'direction', 'additionalInfo',
+          'photoBase64', 'verificationStatus', 'createdAt'
+        ])
+        && data.missionId is string
+        && data.missionId.size() <= 80
+        && data.description is string
+        && data.description.size() > 0
+        && data.description.size() <= 600
+        && hasNoPublicContactInfo(data.description)
+        && data.species in ['dog', 'cat', 'other']
+        && data.color is string
+        && data.color.size() <= 300
+        && hasNoPublicContactInfo(data.color)
+        && data.size in ['unknown', 'small', 'medium', 'large']
+        && data.sightedAt is timestamp
+        && data.sightedAt <= request.time + duration.value(1, 'd')
+        && data.city is string
+        && data.city.size() > 0
+        && data.city.size() <= 80
+        && hasNoPublicContactInfo(data.city)
+        && data.area is string
+        && data.area.size() > 0
+        && data.area.size() <= 100
+        && hasNoPublicContactInfo(data.area)
+        && data.direction is string
+        && data.direction.size() <= 200
+        && hasNoPublicContactInfo(data.direction)
+        && data.additionalInfo is string
+        && data.additionalInfo.size() <= 400
+        && hasNoPublicContactInfo(data.additionalInfo)
+        && data.photoBase64 is string
+        && (
+          data.photoBase64.size() == 0
+          || data.photoBase64.size() >= 4
+            && data.photoBase64.size() <= 273100
+        )
+        && data.verificationStatus == 'unverified'
+        && data.createdAt is timestamp
+        && (
+          data.missionId == ''
+          || exists(
+            /databases/$(database)/documents/lostPetMissions/$(data.missionId)
+          )
+          && get(
+            /databases/$(database)/documents/lostPetMissions/$(data.missionId)
+          ).data.status in ['active', 'sightings', 'verifying']
+        );
+    }
+
+    function walletPath(userId) {
+      return /databases/$(database)/documents/wallets/$(userId);
+    }
+
+    function walletTransactionPath(transactionId) {
+      return /databases/$(database)/documents/walletTransactions/$(transactionId);
+    }
+
+    function walletBalanceBefore(userId) {
+      return exists(walletPath(userId))
+        ? get(walletPath(userId)).data.balance
+        : 0;
+    }
+
+    function validGiftCardWalletCredit(userId, transactionId, giftCardCode) {
+      let transactionPath = walletTransactionPath(transactionId);
+      let giftCardPath =
+        /databases/$(database)/documents/giftCards/$(giftCardCode);
+      let walletAfterPath = walletPath(userId);
+      let entry = getAfter(transactionPath).data;
+      let card = getAfter(giftCardPath).data;
+      let wallet = getAfter(walletAfterPath).data;
+      return existsAfter(transactionPath)
+        && existsAfter(giftCardPath)
+        && existsAfter(walletAfterPath)
+        && get(giftCardPath).data.status == 'active'
+        && entry.ownerUid == userId
+        && entry.type == 'giftCardRedemption'
+        && entry.direction == 'credit'
+        && entry.giftCardCode == giftCardCode
+        && entry.amount == get(giftCardPath).data.balance
+        && entry.amount == get(giftCardPath).data.initialBalance
+        && entry.amount > 0
+        && entry.balanceBefore == walletBalanceBefore(userId)
+        && entry.balanceAfter == entry.balanceBefore + entry.amount
+        && entry.createdAt == request.time
+        && card.status == 'redeemed'
+        && card.balance == 0
+        && card.redeemedBy == userId
+        && card.redeemedAt == request.time
+        && card.lastRedemptionId == transactionId
+        && wallet.ownerUid == userId
+        && wallet.balance == entry.balanceAfter
+        && wallet.lastTransactionId == transactionId
+        && wallet.updatedAt == request.time;
+    }
+
+    function validPosWalletDebit(userId, transactionId, saleId) {
+      let transactionPath = walletTransactionPath(transactionId);
+      let salePath = /databases/$(database)/documents/cafeSales/$(saleId);
+      let walletAfterPath = walletPath(userId);
+      let entry = getAfter(transactionPath).data;
+      let sale = getAfter(salePath).data;
+      let wallet = getAfter(walletAfterPath).data;
+      let walletBefore = get(walletPath(userId)).data;
+      return existsAfter(transactionPath)
+        && existsAfter(salePath)
+        && existsAfter(walletAfterPath)
+        && exists(walletPath(userId))
+        && walletBefore.ownerUid == userId
+        && walletBefore.balance is number
+        && walletBefore.balance >= entry.amount
+        && entry.ownerUid == userId
+        && entry.type == 'posDebit'
+        && entry.direction == 'debit'
+        && entry.saleId == saleId
+        && entry.employeeUid == request.auth.uid
+        && entry.amount is number
+        && entry.amount > 0
+        && entry.createdAt == request.time
+        && sale.paymentMethod == 'wallet'
+        && sale.walletTransactionId == transactionId
+        && sale.customerUid == userId
+        && sale.total == entry.amount
+        && sale.employeeUid == request.auth.uid
+        && wallet.ownerUid == userId
+        && wallet.balance == walletBefore.balance - entry.amount
+        && wallet.balance >= 0
+        && wallet.lastTransactionId == transactionId
+        && wallet.updatedAt == request.time;
+    }
+
+    function validShopSizeStock(data) {
+      return !('stockBySize' in data)
+        || data.stockBySize is map
+          && data.stockBySize.keys().hasOnly([
+            'S', 'M', 'L', 'XL', '2XL', '3XL'
+          ])
+          && data.stockBySize.get('S', 0) is int
+          && data.stockBySize.get('S', 0) >= 0
+          && data.stockBySize.get('M', 0) is int
+          && data.stockBySize.get('M', 0) >= 0
+          && data.stockBySize.get('L', 0) is int
+          && data.stockBySize.get('L', 0) >= 0
+          && data.stockBySize.get('XL', 0) is int
+          && data.stockBySize.get('XL', 0) >= 0
+          && data.stockBySize.get('2XL', 0) is int
+          && data.stockBySize.get('2XL', 0) >= 0
+          && data.stockBySize.get('3XL', 0) is int
+          && data.stockBySize.get('3XL', 0) >= 0
+          && data.stock
+            == data.stockBySize.get('S', 0)
+              + data.stockBySize.get('M', 0)
+              + data.stockBySize.get('L', 0)
+              + data.stockBySize.get('XL', 0)
+              + data.stockBySize.get('2XL', 0)
+              + data.stockBySize.get('3XL', 0);
+    }
+
+    function auditMatches(auditId, customerUid, rewardType, rewardId) {
+      let audit = getAfter(
+        /databases/$(database)/documents/rewardRedemptions/$(auditId)
+      ).data;
+      return audit.customerUid == customerUid
+        && audit.employeeUid == request.auth.uid
+        && audit.rewardType == rewardType
+        && audit.rewardId == rewardId
+        && audit.redeemedAt == request.time;
+    }
+
+    function coldBrewFigureIds() {
+      return [
+        'classic', 'orange', 'nitro', 'wolves_milk', 'orange_milk',
+        'berry_milk', 'pineapple_milk', 'coconut_milk',
+        'passion_fruit_milk', 'peach_milk', 'vanilla_milk', 'copoazu_milk',
+        'lemon_milk', 'blackberry_milk', 'apple_milk', 'lulo_milk'
+      ];
+    }
+
+    function validColdBrewFigureList(figures) {
+      return figures is list
+        && figures.toSet().size() == figures.size()
+        && figures.toSet().hasOnly(coldBrewFigureIds());
+    }
+
+    function validPassportMethod(methodName) {
+      return methodName in [
+        'Dripper V60', 'Chemex', 'Origami', 'Aeropress',
+        'Prensa francesa', 'Sifón japonés', 'Sifón belga',
+        'Cold Brew', 'Nitro Cold Brew'
+      ];
+    }
+
+    function completePassport(methods) {
+      return methods is list
+        && methods.size() == 9
+        && methods.hasAll([
+          'Dripper V60', 'Chemex', 'Origami', 'Aeropress',
+          'Prensa francesa', 'Sifón japonés', 'Sifón belga',
+          'Cold Brew', 'Nitro Cold Brew'
+        ]);
+    }
+
+    function passportStampMatches(stampId, customerUid, methodName) {
+      let stamp = getAfter(
+        /databases/$(database)/documents/passportMethodStamps/$(stampId)
+      ).data;
+      return stamp.customerUid == customerUid
+        && stamp.employeeUid == request.auth.uid
+        && stamp.methodName == methodName
+        && stamp.stampedAt == request.time;
+    }
+
+    function memberCardLookupMatches(userId, sequence) {
+      let memberCard = getAfter(
+        /databases/$(database)/documents/memberCards/$(userId)
+      ).data;
+      let lookup = getAfter(
+        /databases/$(database)/documents/memberCardLookups/$(memberCard.cardNumber)
+      ).data;
+      return memberCard.sequence == sequence
+        && lookup.userUid == userId
+        && lookup.cardNumber == memberCard.cardNumber
+        && lookup.sequence == sequence;
+    }
+
+    function hasActiveMemberCard(userId) {
+      let cardPath =
+        /databases/$(database)/documents/memberCards/$(userId);
+      return exists(cardPath)
+        && get(cardPath).data.userUid == userId
+        && get(cardPath).data.cardNumber is string
+        && get(cardPath).data.cardNumber.matches('^CW-[0-9]{6}$')
+        && exists(
+          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.cardNumber)
+        )
+        && get(
+          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.cardNumber)
+        ).data.userUid == userId
+        && get(
+          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.cardNumber)
+        ).data.cardNumber == get(cardPath).data.cardNumber
+        && get(
+          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.cardNumber)
+        ).data.sequence == get(cardPath).data.sequence;
+    }
+
+    function memberCardHolderMatches(holderId, cardNumber, sequence, createdBy) {
+      return (
+        existsAfter(
+          /databases/$(database)/documents/customers/$(holderId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/customers/$(holderId)
+        ).data.memberCardNumber == cardNumber
+        && getAfter(
+          /databases/$(database)/documents/customers/$(holderId)
+        ).data.sequence == sequence
+        && getAfter(
+          /databases/$(database)/documents/customers/$(holderId)
+        ).data.createdBy == createdBy
+      ) || (
+        existsAfter(
+          /databases/$(database)/documents/member_cards/$(holderId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/member_cards/$(holderId)
+        ).data.memberCardNumber == cardNumber
+        && getAfter(
+          /databases/$(database)/documents/member_cards/$(holderId)
+        ).data.sequence == sequence
+        && getAfter(
+          /databases/$(database)/documents/member_cards/$(holderId)
+        ).data.createdBy == createdBy
+      );
+    }
+
+    function memberCardHolderLookupMatches(cardNumber, sequence) {
+      let lookup = getAfter(
+        /databases/$(database)/documents/customerMemberCardLookups/$(cardNumber)
+      ).data;
+      let holderId = lookup.get('holderId', lookup.get('customerId', ''));
+      return lookup.cardNumber == cardNumber
+        && lookup.sequence == sequence
+        && lookup.createdBy == request.auth.uid
+        && memberCardHolderMatches(
+          holderId,
+          cardNumber,
+          sequence,
+          request.auth.uid
+        );
+    }
+
+    function validCollectibleModel(modelCode, character) {
+      return (modelCode == 'CW-PLUSH-001' && character == 'El Alfa')
+        || (modelCode == 'CW-PLUSH-002' && character == 'El Explorador')
+        || (modelCode == 'CW-PLUSH-003' && character == 'El Elegante')
+        || (modelCode == 'CW-PLUSH-004' && character == 'El Nómada')
+        || (modelCode == 'CW-PLUSH-005' && character == 'El Aventurero')
+        || (modelCode == 'CW-PLUSH-006' && character == 'El Protector')
+        // Preserve records created with the earlier PLUSH model codes.
+        || (modelCode == 'CW-PLUSH-007' && character == 'POMI')
+        || (modelCode == 'CW-PLUSH-008' && character == 'SAMO')
+        || (modelCode == 'CW-PLUSH-009' && character == 'HUSKY')
+        || (modelCode == 'CW-CUP-007' && character == 'POMERANIAN')
+        || (modelCode == 'CW-CUP-008' && character == 'SAMOYED')
+        || (modelCode == 'CW-CUP-009' && character == 'HUSKY');
+    }
+
+    function usernameProfileMatches(userId, username, role) {
+      return (
+        role == 'user'
+        && existsAfter(
+          /databases/$(database)/documents/users/$(userId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/users/$(userId)
+        ).data.get('username', '').lower() == username
+      ) || (
+        role == 'staff'
+        && existsAfter(
+          /databases/$(database)/documents/staffAccessRequests/$(userId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/staffAccessRequests/$(userId)
+        ).data.get('username', '').lower() == username
+      ) || (
+        role == 'management'
+        && isAdmin()
+        && existsAfter(
+          /databases/$(database)/documents/management/$(userId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/management/$(userId)
+        ).data.get('username', '').lower() == username
+      );
+    }
+
+    function validUsernameReservation(data, username) {
+      return data.keys().hasOnly(['uid', 'username', 'role'])
+        && data.keys().hasAll(['uid', 'username', 'role'])
+        && data.uid == request.auth.uid
+        && data.username == username
+        && username.matches('^[a-z0-9._-]{3,20}$')
+        && data.role in ['user', 'staff', 'management']
+        && usernameProfileMatches(data.uid, username, data.role);
+    }
+
+    function adultMatchBirthDate(birthDate) {
+      let birthDateParts = birthDate.split('-');
+      return birthDate is string
+        && birthDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && int(birthDateParts[0]) <= request.time.year() - 18
+        && (
+          int(birthDateParts[0]) < request.time.year() - 18
+          || int(birthDateParts[1]) < request.time.month()
+          || (
+            int(birthDateParts[1]) == request.time.month()
+            && int(birthDateParts[2]) <= request.time.day()
+          )
+        )
+        && int(birthDateParts[1]) >= 1
+        && int(birthDateParts[1]) <= 12
+        && int(birthDateParts[2]) >= 1
+        && int(birthDateParts[2]) <= 31;
+    }
+
+    function matchAccountEligible() {
+      let profilePath =
+        /databases/$(database)/documents/users/$(request.auth.uid);
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && exists(profilePath)
+        && adultMatchBirthDate(
+          get(profilePath).data.get(
+            'birthDate',
+            get(profilePath).data.get('dateOfBirth', '')
+          )
+        );
+    }
+
+    function validMatchPublicId(publicId) {
+      return publicId is string
+        && publicId.matches('^[A-Za-z0-9_-]{8,80}$');
+    }
+
+    function validMatchIntention(intention) {
+      return intention in ['friendship', 'romantic', 'both'];
+    }
+
+    function matchIntentionsCompatible(intentionA, intentionB) {
+      return validMatchIntention(intentionA)
+        && validMatchIntention(intentionB)
+        && (
+          intentionA == 'both'
+          || intentionB == 'both'
+          || intentionA == intentionB
+        );
+    }
+
+    function validMatchProfileFields(data) {
+      return data.keys().hasOnly([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'matchPublicId', 'consentAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'matchPublicId', 'consentAt', 'createdAt', 'updatedAt'
+        ])
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 40
+        && data.bio is string
+        && data.bio.size() <= 180
+        && !matchTextContainsPrivateContact(data.displayName + '\n' + data.bio)
+        && validMatchIntention(data.intention)
+        && data.interests is list
+        && data.interests.size() <= 5
+        && data.interests.toSet().size() == data.interests.size()
+        && data.interests.toSet().hasOnly([
+          'Café de especialidad', 'Eventos', 'Música', 'Lectura',
+          'Naturaleza', 'Mascotas', 'Arte', 'Viajes',
+          'Conversaciones', 'Deportes'
+        ])
+        && data.status in ['configuring', 'active', 'paused', 'left']
+        && validMatchPublicId(data.matchPublicId)
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time
+        && (
+          data.status != 'active'
+          || data.consentAt == request.time
+        );
+    }
+
+    function matchTextContainsPrivateContact(text) {
+      return text.matches(
+          '(?s).*[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}.*'
+        )
+        || text.matches('(?s).*\\+?[0-9][0-9\\s().-]{8,}[0-9].*')
+        || text.matches(
+          '(?i).*-?[0-9]{1,3}[.][0-9]{3,}\\s*[,;]\\s*-?[0-9]{1,3}[.][0-9]{3,}.*'
+        )
+        || text.matches(
+          '(?i).*(calle|av(enida)?|pasaje|carretera|street|avenue)\\s+([a-z]+\\s+)?[0-9]+.*'
+        );
+    }
+
+    function ownMatchParticipantPath() {
+      return /databases/$(database)/documents/wolvesMatchParticipants/$(request.auth.uid);
+    }
+
+    function ownMatchPublicId() {
+      return get(ownMatchParticipantPath()).data.matchPublicId;
+    }
+
+    function ownsMatchPublicId(publicId) {
+      return matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && get(ownMatchParticipantPath()).data.matchPublicId == publicId;
+    }
+
+    function matchProfileAt(publicId) {
+      return /databases/$(database)/documents/wolvesMatchPublicProfiles/$(publicId);
+    }
+
+    function matchPublicIdAt(publicId) {
+      return /databases/$(database)/documents/wolvesMatchPublicIds/$(publicId);
+    }
+
+    function matchProfileOwnedByCurrentUser(publicId) {
+      return exists(matchPublicIdAt(publicId))
+        && get(matchPublicIdAt(publicId)).data.uid == request.auth.uid;
+    }
+
+    function activeMatchProfile(publicId) {
+      return validMatchPublicId(publicId)
+        && exists(matchProfileAt(publicId))
+        && get(matchProfileAt(publicId)).data.status == 'active';
+    }
+
+    function matchPairAt(publicIdA, publicIdB) {
+      return /databases/$(database)/documents/wolvesMatchPairs/$(publicIdA + '__' + publicIdB);
+    }
+
+    function matchPairExists(publicIdA, publicIdB) {
+      return exists(matchPairAt(publicIdA, publicIdB))
+        || exists(matchPairAt(publicIdB, publicIdA));
+    }
+
+    function readableMatchPair(data) {
+      return matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && data.publicIds is list
+        && ownMatchPublicId() in data.publicIds;
+    }
+
+    function canGetMissingMatchPair(pairId) {
+      let ownId = get(ownMatchParticipantPath()).data.matchPublicId;
+      let pairPath =
+        /databases/$(database)/documents/wolvesMatchPairs/$(pairId);
+      return matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && get(ownMatchParticipantPath()).data.status == 'active'
+        && !exists(pairPath)
+        && (
+          pairId.matches(
+            '^' + ownId + '__[A-Za-z0-9_-]{8,80}$'
+          )
+          || pairId.matches(
+            '^[A-Za-z0-9_-]{8,80}__' + ownId + '$'
+          )
+        );
+    }
+
+    function compatibleActiveMatchPair(publicIdA, publicIdB) {
+      return activeMatchProfile(publicIdA)
+        && activeMatchProfile(publicIdB)
+        && matchIntentionsCompatible(
+          get(matchProfileAt(publicIdA)).data.intention,
+          get(matchProfileAt(publicIdB)).data.intention
+        )
+        && !exists(
+          /databases/$(database)/documents/wolvesMatchBlocks/$(publicIdA)/users/$(publicIdB)
+        )
+        && !exists(
+          /databases/$(database)/documents/wolvesMatchBlocks/$(publicIdB)/users/$(publicIdA)
+        );
+    }
+
+    function validMatchPairData(data, pairId) {
+      return data.keys().hasOnly([
+          'publicIds', 'status', 'interestFromPublicId',
+          'decidedByPublicId', 'createdAt', 'updatedAt',
+          'mutualAt', 'decidedAt'
+        ])
+        && data.keys().hasAll([
+          'publicIds', 'status', 'interestFromPublicId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.publicIds is list
+        && data.publicIds.size() == 2
+        && validMatchPublicId(data.publicIds[0])
+        && validMatchPublicId(data.publicIds[1])
+        && data.publicIds[0] != data.publicIds[1]
+        && pairId == data.publicIds[0] + '__' + data.publicIds[1]
+        && data.status in ['pending', 'mutual', 'declined', 'blocked']
+        && validMatchPublicId(data.interestFromPublicId)
+        && data.interestFromPublicId in data.publicIds
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function canCreateMatchPair(data, pairId) {
+      let actorId = ownMatchPublicId();
+      let isInterest = data.status == 'pending'
+        && data.interestFromPublicId == actorId
+        && compatibleActiveMatchPair(data.publicIds[0], data.publicIds[1]);
+      let isDismissal = data.status == 'declined'
+        && data.interestFromPublicId == actorId
+        && data.decidedByPublicId == actorId
+        && data.decidedAt == request.time
+        && compatibleActiveMatchPair(data.publicIds[0], data.publicIds[1]);
+      let targetId =
+        data.publicIds[0] == actorId ? data.publicIds[1] : data.publicIds[0];
+      let isBlock = data.status == 'blocked'
+        && data.interestFromPublicId == actorId
+        && existsAfter(
+          /databases/$(database)/documents/wolvesMatchBlocks/$(actorId)/users/$(targetId)
+        );
+      return matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && get(ownMatchParticipantPath()).data.status == 'active'
+        && validMatchPairData(data, pairId)
+        && actorId in data.publicIds
+        && activeMatchProfile(targetId)
+        && (isInterest || isDismissal || isBlock)
+        && data.createdAt == request.time;
+    }
+
+    function canUpdateMatchPair(data, pairId) {
+      let actorId = ownMatchPublicId();
+      let wasPending = resource.data.status == 'pending';
+      let isRecipient = wasPending
+        && resource.data.interestFromPublicId != actorId;
+      let isDismissal = data.status == 'declined'
+        && data.interestFromPublicId == actorId
+        && data.decidedByPublicId == actorId
+        && data.decidedAt == request.time
+        && resource.data.status in ['pending', 'declined'];
+      let isResponse = isRecipient
+        && data.decidedByPublicId == actorId
+        && data.status in ['mutual', 'declined']
+        && (
+          data.status == 'mutual'
+          && data.mutualAt == request.time
+          || data.status == 'declined'
+          && data.decidedAt == request.time
+        );
+      let isBlock = data.status == 'blocked'
+        && data.interestFromPublicId == actorId
+        && existsAfter(
+          /databases/$(database)/documents/wolvesMatchBlocks/$(actorId)/users/$(data.publicIds[0] == actorId ? data.publicIds[1] : data.publicIds[0])
+        );
+      return matchAccountEligible()
+        && get(ownMatchParticipantPath()).data.status == 'active'
+        && readableMatchPair(resource.data)
+        && validMatchPairData(data, pairId)
+        && data.publicIds == resource.data.publicIds
+        && data.createdAt == resource.data.createdAt
+        && (
+          isDismissal
+          && compatibleActiveMatchPair(data.publicIds[0], data.publicIds[1])
+          || isResponse
+          && compatibleActiveMatchPair(data.publicIds[0], data.publicIds[1])
+          || isBlock
+        );
+    }
+
+    match /usernameRegistry/{username} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+        && validUsernameReservation(request.resource.data, username);
+      allow update: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.role == resource.data.role
+        && validUsernameReservation(request.resource.data, username);
+      allow delete: if request.auth != null
+        && (
+          resource.data.uid == request.auth.uid
+          && (
+          resource.data.role == 'user'
+          && (
+            !existsAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            )
+            || getAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.get('username', '').lower() != username
+          )
+          || resource.data.role == 'staff'
+          && (
+            !existsAfter(
+              /databases/$(database)/documents/staffAccessRequests/$(request.auth.uid)
+            )
+            || getAfter(
+              /databases/$(database)/documents/staffAccessRequests/$(request.auth.uid)
+            ).data.get('username', '').lower() != username
+          )
+          || resource.data.role == 'management'
+          && (
+            !existsAfter(
+              /databases/$(database)/documents/management/$(request.auth.uid)
+            )
+            || getAfter(
+              /databases/$(database)/documents/management/$(request.auth.uid)
+            ).data.get('username', '').lower() != username
+          )
+          )
+          || isAdmin()
+          && resource.data.role == 'staff'
+          && !existsAfter(
+            /databases/$(database)/documents/staffAccessRequests/$(resource.data.uid)
+          )
+        );
+    }
+
+    match /management/{userId} {
+      allow get: if request.auth != null
+        && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create, delete: if false;
+      allow update: if isAdmin()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['username'])
+        && request.resource.data.username is string
+        && request.resource.data.username.matches('^[a-zA-Z0-9._-]{3,20}$')
+        && existsAfter(
+          /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+        )
+        && getAfter(
+          /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+        ).data.uid == userId
+        && getAfter(
+          /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+        ).data.role == 'management';
+    }
+
+    match /pos_staff/{userId} {
+      allow get: if request.auth != null
+        && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'email', 'firstName', 'lastName', 'displayName', 'username',
+          'gender', 'birthDate',
+          'phoneNumber', 'phoneCountryCode', 'phoneCountryIsoCode',
+          'phoneNationalNumber', 'role', 'createdAt', 'approvedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'email', 'firstName', 'lastName', 'displayName', 'gender',
+          'birthDate', 'phoneNumber', 'phoneCountryCode',
+          'phoneCountryIsoCode', 'phoneNationalNumber', 'role', 'createdAt',
+          'approvedAt'
+        ])
+        && request.resource.data.role in ['barista', 'cajero', 'cocina']
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && hasValidStaffPersonalData(request.resource.data)
+        && (
+          !('username' in request.resource.data)
+          || request.resource.data.username is string
+            && request.resource.data.username.matches(
+              '^[a-zA-Z0-9._-]{3,20}$'
+            )
+            && existsAfter(
+              /databases/$(database)/documents/staffAccessRequests/$(userId)
+            )
+            && getAfter(
+              /databases/$(database)/documents/staffAccessRequests/$(userId)
+            ).data.get('username', '').lower()
+              == request.resource.data.username.lower()
+        )
+        && request.resource.data.birthDate is string
+        && createdAtMatchesRequestTime()
+        && request.resource.data.approvedAt == request.time;
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'email', 'firstName', 'lastName', 'displayName', 'username',
+            'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+            'phoneCountryIsoCode', 'phoneNationalNumber', 'role', 'approvedAt'
+          ])
+        && request.resource.data.role in ['barista', 'cajero', 'cocina']
+        && request.resource.data.email is string
+        && request.resource.data.displayName is string
+        && (
+          !('gender' in request.resource.data)
+          || hasValidStaffPersonalData(request.resource.data)
+        )
+        && (
+          !('username' in request.resource.data)
+          || request.resource.data.username is string
+            && request.resource.data.username.matches(
+              '^[a-zA-Z0-9._-]{3,20}$'
+            )
+            && existsAfter(
+              /databases/$(database)/documents/staffAccessRequests/$(userId)
+            )
+            && getAfter(
+              /databases/$(database)/documents/staffAccessRequests/$(userId)
+            ).data.get('username', '').lower()
+              == request.resource.data.username.lower()
+        )
+        && request.resource.data.birthDate is string
+        && request.resource.data.approvedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    match /communityStats/{statsId} {
+      allow get: if statsId == 'mischiefWall'
+        && request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      allow list: if false;
+      allow create: if statsId == 'mischiefWall'
+        && request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'memberCount', 'dailyPostDate', 'dailyPostCount',
+          'lastMemberUid', 'lastPostId', 'updatedAt'
+        ])
+        && updatedAtMatchesRequestTime()
+        && request.resource.data.memberCount == 1
+        && request.resource.data.dailyPostDate is string
+        && request.resource.data.dailyPostDate.matches(
+          '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+        )
+        && (
+          (
+            request.resource.data.dailyPostCount == 1
+            && request.resource.data.lastMemberUid == ''
+            && request.resource.data.lastPostId is string
+            && request.auth.token.email_verified == true
+            && getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            ).data.ownerUid == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            ).data.createdAt == request.time
+          )
+          || (
+            request.resource.data.dailyPostCount == 0
+            && request.resource.data.lastMemberUid == request.auth.uid
+            && request.resource.data.lastPostId == ''
+            && getAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.createdAt == request.time
+            && getAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.email == request.auth.token.email
+          )
+        );
+      allow update: if statsId == 'mischiefWall'
+        && request.auth != null
+        && updatedAtMatchesRequestTime()
+        && (
+          (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['memberCount', 'lastMemberUid', 'updatedAt'])
+            && request.resource.data.memberCount == resource.data.memberCount + 1
+            && request.resource.data.lastMemberUid == request.auth.uid
+            && request.resource.data.dailyPostCount
+              == resource.data.dailyPostCount
+            && request.resource.data.dailyPostDate == resource.data.dailyPostDate
+            && request.resource.data.lastPostId == resource.data.lastPostId
+            && getAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.createdAt == request.time
+            && getAfter(
+              /databases/$(database)/documents/users/$(request.auth.uid)
+            ).data.email == request.auth.token.email
+          )
+          || (
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'dailyPostCount', 'dailyPostDate', 'lastPostId', 'updatedAt'
+              ])
+            && request.resource.data.memberCount == resource.data.memberCount
+            && request.resource.data.lastMemberUid == resource.data.lastMemberUid
+            && request.resource.data.lastPostId is string
+            && request.resource.data.dailyPostCount is int
+            && request.resource.data.dailyPostCount >= 1
+            && (
+              request.resource.data.dailyPostDate == resource.data.dailyPostDate
+              && request.resource.data.dailyPostCount
+                == resource.data.dailyPostCount + 1
+              || request.resource.data.dailyPostDate
+                != resource.data.dailyPostDate
+              && request.resource.data.dailyPostCount == 1
+            )
+            && existsAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            )
+            && getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            ).data.ownerUid == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(request.resource.data.lastPostId)
+            ).data.createdAt == request.time
+            && request.auth.token.email_verified == true
+          )
+        );
+      allow create, delete: if false;
+    }
+
+    match /mischiefPosts/{postId} {
+      allow get, list: if request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+
+      allow create: if request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.auth.token.email_verified == true
+        && request.resource.data.keys().hasOnly([
+          'ownerUid', 'ownerName', 'dogName', 'description',
+          'mediaType', 'mediaContentType', 'photoBase64',
+          'videoChunkCount', 'fecha_Expiracion', 'innocentVotes',
+          'guiltyVotes', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'ownerUid', 'ownerName', 'dogName', 'description',
+          'mediaType', 'mediaContentType', 'fecha_Expiracion',
+          'innocentVotes', 'guiltyVotes', 'createdAt'
+        ])
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerName is string
+        && request.resource.data.ownerName.size() >= 1
+        && request.resource.data.ownerName.size() <= 80
+        && request.resource.data.dogName is string
+        && request.resource.data.dogName.size() >= 1
+        && request.resource.data.dogName.size() <= 40
+        && request.resource.data.description is string
+        && request.resource.data.description.size() >= 1
+        && request.resource.data.description.size() <= 300
+        && (
+          (
+            request.resource.data.mediaType == 'image'
+            && request.resource.data.mediaContentType == 'image/jpeg'
+            && request.resource.data.photoBase64 is string
+            && request.resource.data.photoBase64.size() >= 4
+            && request.resource.data.photoBase64.size() <= 273100
+            && !('videoChunkCount' in request.resource.data)
+          )
+          || (
+            request.resource.data.mediaType == 'video'
+            && request.resource.data.mediaContentType
+              in ['video/mp4', 'video/quicktime', 'video/webm']
+            && request.resource.data.videoChunkCount is int
+            && request.resource.data.videoChunkCount >= 1
+            && request.resource.data.videoChunkCount <= 12
+            && !('photoBase64' in request.resource.data)
+          )
+        )
+        && request.resource.data.fecha_Expiracion is timestamp
+        && request.resource.data.fecha_Expiracion
+          > request.time + duration.value(6, 'd')
+            + duration.value(23, 'h')
+        && request.resource.data.fecha_Expiracion
+          <= request.time + duration.value(7, 'd')
+            + duration.value(1, 'm')
+        && request.resource.data.innocentVotes == 0
+        && request.resource.data.guiltyVotes == 0
+        && createdAtMatchesRequestTime();
+
+      allow update, delete: if false;
+
+      match /votes/{userId} {
+        allow read, write: if false;
+      }
+
+      match /videoChunks/{chunkId} {
+        allow get, list: if request.auth != null
+          && request.auth.token.firebase.sign_in_provider != 'anonymous';
+        allow create: if request.auth != null
+          && request.auth.token.email_verified == true
+          && request.resource.data.keys().hasOnly([
+            'index', 'ownerUid', 'dataBase64'
+          ])
+          && request.resource.data.index is int
+          && request.resource.data.index >= 0
+          && request.resource.data.index < 12
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.dataBase64 is string
+          && request.resource.data.dataBase64.size() >= 4
+          && request.resource.data.dataBase64.size() <= 614400
+          && getAfter(
+            /databases/$(database)/documents/mischiefPosts/$(postId)
+          ).data.ownerUid == request.auth.uid
+          && getAfter(
+            /databases/$(database)/documents/mischiefPosts/$(postId)
+          ).data.mediaType == 'video'
+          && request.resource.data.index
+            < getAfter(
+              /databases/$(database)/documents/mischiefPosts/$(postId)
+            ).data.videoChunkCount;
+        allow update, delete: if false;
+      }
+    }
+
+    match /mischiefReports/{reportId} {
+      allow get, list: if isAdmin();
+      allow create: if request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.auth.uid == request.resource.data.reporterUid
+        && request.resource.data.keys().hasOnly([
+          'postId', 'reporterUid', 'createdAt'
+        ])
+        && request.resource.data.postId is string
+        && request.resource.data.postId.size() >= 20
+        && request.resource.data.postId.size() <= 80
+        && reportId == request.resource.data.postId + '_'
+          + request.auth.uid
+        && createdAtMatchesRequestTime();
+      allow update, delete: if false;
+    }
+
+    match /packLegacyProfiles/{profileId} {
+      allow get, list: if isAdmin() || resource.data.published == true;
+      allow create: if isAdmin()
+        && validPackLegacyProfile(request.resource.data)
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime();
+      allow update: if isAdmin()
+        && validPackLegacyProfile(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'memberName', 'petName', 'petBreed', 'story', 'achievements',
+          'experienceTitle', 'experienceDescription', 'photoUrl',
+          'published', 'updatedAt'
+        ])
+        && request.resource.data.createdAt == resource.data.createdAt
+        && updatedAtMatchesRequestTime();
+      allow delete: if isAdmin();
+    }
+
+    match /coffeePupProfiles/{userId} {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list, create, update, delete: if false;
+    }
+
+    match /userPets/{userId}/pets/{petId} {
+      function validPetProfile(data) {
+        return data.keys().hasOnly([
+            'name', 'breed', 'birthDate', 'description',
+            'photoPaths', 'photoUrls', 'createdAt', 'updatedAt'
+          ])
+          && data.keys().hasAll([
+            'name', 'breed', 'birthDate', 'description',
+            'photoPaths', 'photoUrls', 'createdAt', 'updatedAt'
+          ])
+          && data.name is string
+          && data.name.size() > 0
+          && data.name.size() <= 60
+          && data.breed is string
+          && data.breed.size() > 0
+          && data.breed.size() <= 80
+          && data.birthDate is timestamp
+          && data.birthDate <= request.time
+          && data.description is string
+          && data.description.size() > 0
+          && data.description.size() <= 500
+          && data.photoPaths is list
+          && data.photoPaths.size() <= 6
+          && data.photoUrls is list
+          && data.photoUrls.size() == data.photoPaths.size()
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp;
+      }
+
+      allow get, list: if request.auth != null
+        && request.auth.uid == userId;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && validPetProfile(request.resource.data)
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime();
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && validPetProfile(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && updatedAtMatchesRequestTime();
+      allow delete: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true;
+    }
+
+    match /lostPetMissions/{missionId} {
+      allow get, list: if isAuthenticatedLostPetMember();
+      allow create: if isVerifiedLostPetMember()
+        && validLostPetMission(request.resource.data)
+        && request.resource.data.status == 'active'
+        && request.resource.data.photoCount >= 1
+        && request.resource.data.sightingsCount == 0
+        && request.resource.data.reunionStory == ''
+        && request.resource.data.shareReunion == false
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime();
+      allow update: if isVerifiedLostPetMember()
+        && resource.data.ownerUid == request.auth.uid
+        && validLostPetMission(request.resource.data)
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.sightingsCount == resource.data.sightingsCount
+        && updatedAtMatchesRequestTime()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'petName', 'species', 'breed', 'size', 'color', 'sex', 'markings',
+          'missingAt', 'city', 'area', 'lastSeenArea', 'description',
+          'photoCount', 'status', 'reunionStory',
+          'shareReunion', 'publicationAuthorized', 'informationIsAccurate',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+
+      match /private/{detailId} {
+        allow get: if detailId == 'details'
+          && isVerifiedLostPetMember()
+          && get(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+        allow list: if false;
+        allow create: if detailId == 'details'
+          && isVerifiedLostPetMember()
+          && request.resource.data.keys().hasOnly([
+            'identification', 'reunionStory', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'identification', 'reunionStory', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.identification is string
+          && request.resource.data.identification.size() <= 250
+          && request.resource.data.reunionStory is string
+          && request.resource.data.reunionStory.size() <= 400
+          && createdAtMatchesRequestTime()
+          && updatedAtMatchesRequestTime()
+          && getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+        allow update: if detailId == 'details'
+          && isVerifiedLostPetMember()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'identification', 'reunionStory', 'updatedAt'
+          ])
+          && request.resource.data.identification is string
+          && request.resource.data.identification.size() <= 250
+          && request.resource.data.reunionStory is string
+          && request.resource.data.reunionStory.size() <= 400
+          && request.resource.data.createdAt == resource.data.createdAt
+          && updatedAtMatchesRequestTime()
+          && get(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+        allow delete: if false;
+      }
+
+      match /photos/{photoId} {
+        allow get, list: if isAuthenticatedLostPetMember();
+        allow create, update: if isVerifiedLostPetMember()
+          && photoId in ['0', '1', '2']
+          && request.resource.data.keys().hasOnly(['index', 'dataBase64'])
+          && request.resource.data.index is int
+          && request.resource.data.index >= 0
+          && request.resource.data.index < 3
+          && request.resource.data.index < getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.photoCount
+          && (
+            photoId == '0' && request.resource.data.index == 0
+            || photoId == '1' && request.resource.data.index == 1
+            || photoId == '2' && request.resource.data.index == 2
+          )
+          && request.resource.data.dataBase64 is string
+          && request.resource.data.dataBase64.size() >= 4
+          && request.resource.data.dataBase64.size() <= 273100
+          && getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+        allow delete: if isVerifiedLostPetMember()
+          && resource.data.index is int
+          && resource.data.index >= getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.photoCount
+          && getAfter(
+            /databases/$(database)/documents/lostPetMissions/$(missionId)
+          ).data.ownerUid == request.auth.uid;
+      }
+    }
+
+    match /lostPetSightings/{sightingId} {
+      allow get, list: if isAuthenticatedLostPetMember();
+      allow create: if isVerifiedLostPetMember()
+        && validLostPetSighting(request.resource.data)
+        && createdAtMatchesRequestTime();
+      allow update, delete: if false;
+    }
+
+    match /lostPetContactRequests/{requestId} {
+      function requestMissionPath() {
+        return /databases/$(database)/documents/lostPetMissions/$(resource.data.missionId);
+      }
+
+      allow get, list: if isVerifiedLostPetMember()
+        && (
+          resource.data.senderUid == request.auth.uid
+          || exists(requestMissionPath())
+            && get(requestMissionPath()).data.ownerUid == request.auth.uid
+        );
+      allow create: if isVerifiedLostPetMember()
+        && request.resource.data.keys().hasOnly([
+          'missionId', 'senderUid', 'senderName', 'message', 'status',
+          'ownerReply', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'missionId', 'senderUid', 'senderName', 'message', 'status',
+          'ownerReply', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.senderName is string
+        && request.resource.data.senderName.size() <= 80
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 500
+        && request.resource.data.status == 'new'
+        && request.resource.data.ownerReply == ''
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime()
+        && exists(
+          /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
+        )
+        && get(
+          /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
+        ).data.ownerUid != request.auth.uid;
+      allow update: if isVerifiedLostPetMember()
+        && exists(requestMissionPath())
+        && get(requestMissionPath()).data.ownerUid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'ownerReply', 'status', 'updatedAt'
+        ])
+        && request.resource.data.ownerReply is string
+        && request.resource.data.ownerReply.size() > 0
+        && request.resource.data.ownerReply.size() <= 500
+        && request.resource.data.status == 'replied'
+        && updatedAtMatchesRequestTime();
+      allow delete: if false;
+    }
+
+    match /lostPetFavorites/{favoriteId} {
+      allow get, list: if isVerifiedLostPetMember()
+        && resource.data.userUid == request.auth.uid;
+      allow create: if isVerifiedLostPetMember()
+        && request.resource.data.keys().hasOnly([
+          'userUid', 'missionId', 'createdAt'
+        ])
+        && request.resource.data.userUid == request.auth.uid
+        && request.resource.data.missionId is string
+        && createdAtMatchesRequestTime()
+        && exists(
+          /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
+        );
+      allow update: if false;
+      allow delete: if isVerifiedLostPetMember()
+        && resource.data.userUid == request.auth.uid;
+    }
+
+    match /lostPetReports/{reportId} {
+      allow get, list: if isAdmin();
+      allow create: if isVerifiedLostPetMember()
+        && request.resource.data.keys().hasOnly([
+          'missionId', 'reporterUid', 'reason', 'details', 'createdAt'
+        ])
+        && request.resource.data.missionId is string
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.reason in [
+          'sospechoso', 'falso', 'abuso', 'privacidad'
+        ]
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 300
+        && createdAtMatchesRequestTime()
+        && reportId == request.resource.data.missionId + '_'
+          + request.auth.uid
+        && exists(
+          /databases/$(database)/documents/lostPetMissions/$(request.resource.data.missionId)
+        );
+      allow update, delete: if false;
+    }
+
+    match /users/{userId} {
+      allow get: if request.auth != null
+        && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'email', 'displayName', 'firstName', 'lastName', 'gender', 'username',
+          'role', 'createdAt', 'birthDate', 'isVerified',
+          'birthdayMarketingConsent', 'birthdayConsentUpdatedAt',
+          'phoneNumber', 'phoneCountryCode', 'phoneCountryIsoCode',
+          'phoneNationalNumber', 'phoneVerified', 'messageCredits',
+          'messageCreditsUpdatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'email', 'displayName', 'createdAt', 'isVerified'
+        ])
+        && request.resource.data.isVerified == false
+        && (
+          !('gender' in request.resource.data)
+          || request.resource.data.gender in ['male', 'female']
+        )
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName is string
+        && createdAtMatchesRequestTime()
+        && (
+          !('birthdayMarketingConsent' in request.resource.data)
+          && !('birthdayConsentUpdatedAt' in request.resource.data)
+          || request.resource.data.birthdayMarketingConsent is bool
+            && request.resource.data.birthdayConsentUpdatedAt == request.time
+        )
+        && (
+          !('messageCredits' in request.resource.data)
+          && !('messageCreditsUpdatedAt' in request.resource.data)
+          || request.resource.data.messageCredits is int
+            && request.resource.data.messageCredits == 10
+            && request.resource.data.messageCreditsUpdatedAt == request.time
+        )
+        && (
+          request.auth.token.firebase.sign_in_provider == 'anonymous'
+          || (
+            (
+              request.auth.token.email_verified == true
+              || request.auth.token.phone_number is string
+            )
+            && request.resource.data.keys().hasOnly([
+              'email', 'displayName', 'role', 'createdAt', 'isVerified'
+            ])
+            && request.resource.data.role == 'user'
+            && request.resource.data.displayName.size() <= 120
+          )
+          || (
+            request.resource.data.keys().hasAll([
+              'firstName', 'lastName', 'gender', 'username', 'role', 'birthDate',
+              'phoneNumber', 'phoneCountryCode', 'phoneCountryIsoCode',
+              'phoneNationalNumber', 'phoneVerified',
+              'birthdayMarketingConsent', 'birthdayConsentUpdatedAt'
+            ])
+            && request.resource.data.role == 'user'
+            && request.resource.data.firstName is string
+            && request.resource.data.firstName.size() > 0
+            && request.resource.data.firstName.size() <= 60
+            && request.resource.data.lastName is string
+            && request.resource.data.lastName.size() > 0
+            && request.resource.data.lastName.size() <= 60
+            && request.resource.data.gender in ['male', 'female']
+            && request.resource.data.displayName
+              == request.resource.data.firstName + ' '
+                + request.resource.data.lastName
+            && request.resource.data.birthdayMarketingConsent is bool
+            && request.resource.data.birthdayConsentUpdatedAt == request.time
+            && request.resource.data.username is string
+            && request.resource.data.username.matches('^[a-zA-Z0-9._-]{3,20}$')
+            && existsAfter(
+              /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+            )
+            && getAfter(
+              /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+            ).data.uid == userId
+            && getAfter(
+              /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+            ).data.role == 'user'
+            && request.resource.data.birthDate is string
+            && request.resource.data.birthDate.matches(
+              '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            )
+            && request.resource.data.phoneNumber is string
+            && request.resource.data.phoneNumber.matches(
+              '^[+][1-9][0-9]{6,14}$'
+            )
+            && request.resource.data.phoneCountryCode is string
+            && request.resource.data.phoneCountryCode.matches(
+              '^[+][1-9][0-9]{0,3}$'
+            )
+            && request.resource.data.phoneCountryIsoCode is string
+            && request.resource.data.phoneCountryIsoCode.matches(
+              '^[A-Z]{2}$'
+            )
+            && request.resource.data.phoneNationalNumber is string
+            && request.resource.data.phoneNationalNumber.matches(
+              '^[0-9]{7,15}$'
+            )
+            && request.resource.data.phoneNumber
+              == request.resource.data.phoneCountryCode
+                + request.resource.data.phoneNationalNumber
+            && request.resource.data.phoneVerified == false
+          )
+        );
+
+      allow update: if (
+          request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['email', 'displayName', 'username'])
+          && request.resource.data.email == request.auth.token.email
+          && (
+            !('birthDate' in request.resource.data)
+            || request.resource.data.birthDate is string
+              && request.resource.data.birthDate.matches(
+                '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+              )
+          )
+          && (
+            !('username' in request.resource.data)
+            || request.resource.data.username is string
+              && request.resource.data.username.matches(
+                '^[a-zA-Z0-9._-]{3,20}$'
+              )
+              && existsAfter(
+                /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+              )
+              && getAfter(
+                /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+              ).data.uid == userId
+              && getAfter(
+                /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+              ).data.role == 'user'
+          )
+        ) || (
+          request.auth != null
+              && request.auth.uid == userId
+              && request.auth.token.email_verified == true
+              && (
+                resource.data.birthDate is string
+                || resource.data.birthDate is timestamp
+                || resource.data.dateOfBirth is string
+                || resource.data.dateOfBirth is timestamp
+              )
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly([
+                  'birthdayMarketingConsent', 'birthdayConsentUpdatedAt'
+                ])
+              && request.resource.data.birthdayMarketingConsent is bool
+              && request.resource.data.birthdayConsentUpdatedAt == request.time
+        ) || (
+          request.auth != null
+          && request.auth.uid == userId
+          && request.auth.token.email_verified == true
+          && !('birthDate' in resource.data)
+          && !('dateOfBirth' in resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'birthDate', 'birthdayMarketingConsent',
+              'birthdayConsentUpdatedAt'
+            ])
+          && request.resource.data.birthDate is string
+          && request.resource.data.birthDate.matches(
+            '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+          )
+          && request.resource.data.birthdayMarketingConsent is bool
+          && request.resource.data.birthdayConsentUpdatedAt == request.time
+        ) || (
+              request.auth != null
+          && request.auth.uid == userId
+              && (
+                request.auth.token.email_verified == true
+                || request.auth.token.phone_number is string
+              )
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['profilePhotoBase64', 'profilePhotoUpdatedAt'])
+              && request.resource.data.profilePhotoBase64 is string
+              && request.resource.data.profilePhotoBase64.size() <= 273100
+              && request.resource.data.profilePhotoBase64.matches(
+                '^/9j/[A-Za-z0-9+/]*={0,2}$'
+              )
+              && request.resource.data.profilePhotoUpdatedAt == request.time
+        ) || (
+              request.auth != null
+              && request.auth.uid == userId
+              && !('messageCredits' in resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['messageCredits', 'messageCreditsUpdatedAt'])
+          && request.resource.data.messageCredits is int
+          && request.resource.data.messageCredits == 10
+          && request.resource.data.messageCreditsUpdatedAt == request.time
+        ) || (
+          request.auth != null
+          && request.auth.uid == userId
+          && resource.data.messageCredits is int
+          && resource.data.messageCredits > 0
+          && request.resource.data.messageCredits
+            == resource.data.messageCredits - 1
+          && request.resource.data.messageCreditsUpdatedAt == request.time
+          && request.resource.data.lastChatMessageId is string
+          && request.resource.data.lastChatMessageId.matches(
+            '^[A-Za-z0-9_-]{8,80}$'
+          )
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'messageCredits', 'messageCreditsUpdatedAt', 'lastChatMessageId'
+            ])
+          && existsAfter(
+            /databases/$(database)/documents/users/$(userId)/chatMessages/$(request.resource.data.lastChatMessageId)
+          )
+          && getAfter(
+            /databases/$(database)/documents/users/$(userId)/chatMessages/$(request.resource.data.lastChatMessageId)
+          ).data.createdAt == request.time
+          && getAfter(
+            /databases/$(database)/documents/users/$(userId)/chatMessages/$(request.resource.data.lastChatMessageId)
+          ).data.text is string
+        ) || (
+          isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['role', 'rol', 'email', 'displayName'])
+          && request.resource.data.get(
+            'role',
+            request.resource.data.get('rol', '')
+          ) in [
+            'user', 'cliente', 'barista', 'cajero', 'admin', 'gerente'
+          ]
+        );
+
+      allow delete: if isAdmin();
+
+      match /chatMessages/{messageId} {
+        allow get, list: if request.auth != null
+          && request.auth.uid == userId;
+        allow create: if request.auth != null
+          && request.auth.uid == userId
+          && messageId.matches('^[A-Za-z0-9_-]{8,80}$')
+          && request.resource.data.keys().hasOnly([
+            'text', 'matchProfileId', 'matchName', 'createdAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'text', 'matchProfileId', 'matchName', 'createdAt'
+          ])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.matchProfileId is string
+          && request.resource.data.matchProfileId.matches(
+            '^[A-Za-z0-9_-]{1,80}$'
+          )
+          && request.resource.data.matchName is string
+          && request.resource.data.matchName.size() > 0
+          && request.resource.data.matchName.size() <= 80
+          && createdAtMatchesRequestTime()
+          && exists(
+            /databases/$(database)/documents/users/$(userId)
+          )
+          && get(
+            /databases/$(database)/documents/users/$(userId)
+          ).data.messageCredits is int
+          && get(
+            /databases/$(database)/documents/users/$(userId)
+          ).data.messageCredits > 0
+          && getAfter(
+            /databases/$(database)/documents/users/$(userId)
+          ).data.messageCredits
+            == get(
+              /databases/$(database)/documents/users/$(userId)
+            ).data.messageCredits - 1
+          && getAfter(
+            /databases/$(database)/documents/users/$(userId)
+          ).data.lastChatMessageId == messageId;
+        allow update, delete: if false;
+      }
+
+      match /pushTokens/{tokenHash} {
+        allow read: if false;
+
+        allow create: if request.auth != null
+          && request.auth.uid == userId
+          && request.auth.token.email_verified == true
+          && (databaseRole() in ['barista', 'cajero', 'cocina'] || isAdmin())
+          && tokenHash.matches('^[a-f0-9]{64}$')
+          && request.resource.data.keys().hasOnly([
+            'token', 'platform', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'token', 'platform', 'updatedAt'
+          ])
+          && request.resource.data.token is string
+          && request.resource.data.token.size() >= 100
+          && request.resource.data.token.size() <= 4096
+          && request.resource.data.platform == 'web'
+          && updatedAtMatchesRequestTime();
+
+        allow update: if request.auth != null
+          && request.auth.uid == userId
+          && request.auth.token.email_verified == true
+          && (databaseRole() in ['barista', 'cajero', 'cocina'] || isAdmin())
+          && tokenHash.matches('^[a-f0-9]{64}$')
+          && request.resource.data.keys().hasOnly([
+            'token', 'platform', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'token', 'platform', 'updatedAt'
+          ])
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['token', 'platform', 'updatedAt'])
+          && request.resource.data.token is string
+          && request.resource.data.token.size() >= 100
+          && request.resource.data.token.size() <= 4096
+          && request.resource.data.platform == 'web'
+          && updatedAtMatchesRequestTime();
+
+        allow delete: if request.auth != null
+          && request.auth.uid == userId
+          && request.auth.token.email_verified == true
+          && (databaseRole() in ['barista', 'cajero'] || isAdmin());
+      }
+
+      match /bitacora/{code} {
+        allow get, list: if request.auth != null
+          && request.auth.uid == userId;
+
+        allow create: if request.auth != null
+          && request.auth.uid == userId
+          && code.matches('^CW-(PLUSH-00[1-9]|CUP-00[7-9])-[0-9]{4}$')
+          && request.resource.data.keys().hasOnly([
+            'nickname', 'notes', 'isFavorite', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'nickname', 'notes', 'isFavorite', 'updatedAt'
+          ])
+          && request.resource.data.nickname is string
+          && request.resource.data.nickname.size() <= 40
+          && request.resource.data.notes is string
+          && request.resource.data.notes.size() <= 500
+          && request.resource.data.isFavorite is bool
+          && updatedAtMatchesRequestTime()
+          && exists(
+            /databases/$(database)/documents/collectiblePlushes/$(code)
+          )
+          && get(
+            /databases/$(database)/documents/collectiblePlushes/$(code)
+          ).data.claimedBy == userId;
+
+        allow update: if request.auth != null
+          && request.auth.uid == userId
+          && code.matches('^CW-(PLUSH-00[1-9]|CUP-00[7-9])-[0-9]{4}$')
+          && request.resource.data.keys().hasOnly([
+            'nickname', 'notes', 'isFavorite', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'nickname', 'notes', 'isFavorite', 'updatedAt'
+          ])
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['nickname', 'notes', 'isFavorite', 'updatedAt'])
+          && request.resource.data.nickname is string
+          && request.resource.data.nickname.size() <= 40
+          && request.resource.data.notes is string
+          && request.resource.data.notes.size() <= 500
+          && request.resource.data.isFavorite is bool
+          && updatedAtMatchesRequestTime()
+          && exists(
+            /databases/$(database)/documents/collectiblePlushes/$(code)
+          )
+          && get(
+            /databases/$(database)/documents/collectiblePlushes/$(code)
+          ).data.claimedBy == userId;
+
+        allow delete: if false;
+      }
+
+      match /challengeProgress/{challengeId} {
+        allow get, list: if request.auth != null
+          && request.auth.uid == userId;
+
+        allow create: if request.auth != null
+          && request.auth.uid == userId
+          && challengeId in [
+            'daily_pet_coffee',
+            'visit_5_coffee_wolves',
+            'try_3_coffee_methods',
+            'bring_a_friend'
+          ]
+          && request.resource.data.keys().hasOnly([
+            'challengeId', 'title', 'status', 'completedAt', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'challengeId', 'title', 'status', 'completedAt', 'updatedAt'
+          ])
+          && request.resource.data.challengeId == challengeId
+          && request.resource.data.title is string
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.status == 'self_reported'
+          && request.resource.data.completedAt == request.time
+          && updatedAtMatchesRequestTime();
+
+        allow update, delete: if false;
+      }
+
+      match /friendRequests/{requesterUid} {
+        allow get, list: if request.auth != null
+          && request.auth.uid == userId;
+
+        allow create: if request.auth != null
+          && request.auth.uid == requesterUid
+          && requesterUid != userId
+          && exists(
+            /databases/$(database)/documents/users/$(userId)
+          )
+          && request.resource.data.keys().hasOnly([
+            'fromUid', 'fromDisplayName', 'status', 'createdAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'fromUid', 'fromDisplayName', 'status', 'createdAt'
+          ])
+          && request.resource.data.fromUid == request.auth.uid
+          && request.resource.data.fromDisplayName is string
+          && request.resource.data.fromDisplayName.size() <= 80
+          && request.resource.data.status == 'pending'
+          && createdAtMatchesRequestTime();
+
+        allow update: if request.auth != null
+          && requesterUid != userId
+          && (
+            request.auth.uid == userId
+            && resource.data.status == 'pending'
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'decidedAt', 'decidedBy'])
+            && request.resource.data.status in ['accepted', 'rejected']
+            && request.resource.data.decidedAt == request.time
+            && request.resource.data.decidedBy == request.auth.uid
+            || request.auth.uid == requesterUid
+              && resource.data.fromUid == request.auth.uid
+              && resource.data.status == 'rejected'
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['fromDisplayName', 'status', 'createdAt'])
+              && request.resource.data.fromDisplayName is string
+              && request.resource.data.fromDisplayName.size() <= 80
+              && request.resource.data.status == 'pending'
+              && createdAtMatchesRequestTime()
+          );
+
+        allow delete: if false;
+      }
+
+      match /friends/{friendUid} {
+        allow get, list: if request.auth != null
+          && request.auth.uid == userId;
+
+        allow create: if request.auth != null
+          && request.auth.uid == friendUid
+          && friendUid != userId
+          && request.resource.data.keys().hasOnly([
+            'displayName', 'createdAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'displayName', 'createdAt'
+          ])
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() <= 80
+          && createdAtMatchesRequestTime()
+          && getAfter(
+            /databases/$(database)/documents/users/$(friendUid)/friendRequests/$(userId)
+          ).data.status == 'accepted'
+          && getAfter(
+            /databases/$(database)/documents/users/$(friendUid)/friendRequests/$(userId)
+          ).data.decidedBy == request.auth.uid;
+
+        allow update, delete: if false;
+      }
+    }
+
+    match /memberCards/{userId} {
+      allow get: if request.auth != null
+        && (request.auth.uid == userId || isVerifiedStaff());
+      allow list: if isAdmin();
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'userUid', 'cardNumber', 'sequence', 'createdAt'
+        ])
+        && request.resource.data.userUid == userId
+        && request.resource.data.cardNumber is string
+        && request.resource.data.cardNumber.matches('^CW-[0-9]{6}$')
+        && request.resource.data.sequence is int
+        && request.resource.data.sequence > 0
+        && createdAtMatchesRequestTime()
+        && getAfter(
+          /databases/$(database)/documents/memberCardLookups/$(request.resource.data.cardNumber)
+        ).data.userUid == userId
+        && getAfter(
+          /databases/$(database)/documents/memberCardLookups/$(request.resource.data.cardNumber)
+        ).data.sequence == request.resource.data.sequence
+        && getAfter(
+          /databases/$(database)/documents/memberCardCounters/current
+        ).data.lastSequence == request.resource.data.sequence;
+
+      allow update, delete: if false;
+    }
+
+    match /memberCardLookups/{cardNumber} {
+      allow get: if isVerifiedStaff();
+      allow list: if false;
+
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'userUid', 'cardNumber', 'sequence', 'createdAt'
+        ])
+        && request.resource.data.userUid == request.auth.uid
+        && request.resource.data.cardNumber == cardNumber
+        && cardNumber.matches('^CW-[0-9]{6}$')
+        && request.resource.data.sequence is int
+        && request.resource.data.sequence > 0
+        && createdAtMatchesRequestTime()
+        && getAfter(
+          /databases/$(database)/documents/memberCards/$(request.auth.uid)
+        ).data.cardNumber == cardNumber
+        && getAfter(
+          /databases/$(database)/documents/memberCards/$(request.auth.uid)
+        ).data.sequence == request.resource.data.sequence
+        && getAfter(
+          /databases/$(database)/documents/memberCardCounters/current
+        ).data.lastSequence == request.resource.data.sequence;
+
+      allow update, delete: if false;
+    }
+
+    match /memberCardCounters/{counterId} {
+      allow get: if request.auth != null && counterId == 'current';
+      allow list: if false;
+
+      allow create: if request.auth != null
+        && counterId == 'current'
+        && request.resource.data.keys().hasOnly(['lastSequence'])
+        && request.resource.data.lastSequence == 1
+        && memberCardLookupMatches(request.auth.uid, 1);
+
+      allow update: if request.auth != null
+        && counterId == 'current'
+        && request.resource.data.keys().hasOnly(['lastSequence'])
+        && resource.data.lastSequence is int
+        && request.resource.data.lastSequence == resource.data.lastSequence + 1
+        && memberCardLookupMatches(
+          request.auth.uid,
+          request.resource.data.lastSequence
+        );
+
+      allow delete: if false;
+    }
+
+    match /customers/{customerId} {
+      allow get, list: if isAdmin();
+
+      allow create: if isAdmin()
+        && validMemberCardFields(request.resource.data)
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() >= 2
+        && request.resource.data.fullName.size() <= 120
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 8
+        && request.resource.data.phone.size() <= 24
+        && request.resource.data.phone.matches(
+          '^([+][0-9]{8,15}|[0-9]{8,15})$'
+        )
+        && request.resource.data.nationalId is string
+        && request.resource.data.nationalId.size() >= 4
+        && request.resource.data.nationalId.size() <= 32
+        && request.resource.data.email is string
+        && request.resource.data.email.size() >= 5
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.email.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$')
+        && request.resource.data.memberCardNumber is string
+        && request.resource.data.memberCardNumber.matches('^CW-M-[0-9]{6}$')
+        && request.resource.data.sequence is int
+        && request.resource.data.sequence > 0
+        && request.resource.data.createdBy == request.auth.uid
+        && createdAtMatchesRequestTime()
+        && getAfter(
+          /databases/$(database)/documents/customerMemberCardLookups/$(request.resource.data.memberCardNumber)
+        ).data.customerId == customerId
+        && getAfter(
+          /databases/$(database)/documents/customerMemberCardCounters/current
+        ).data.lastSequence == request.resource.data.sequence
+        && getAfter(
+          /databases/$(database)/documents/customerMemberCardCounters/current
+        ).data.lastCardNumber == request.resource.data.memberCardNumber;
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /member_cards/{holderId} {
+      allow get, list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && validMemberCardFields(request.resource.data)
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() >= 2
+        && request.resource.data.fullName.size() <= 120
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 8
+        && request.resource.data.phone.size() <= 24
+        && request.resource.data.phone.matches(
+          '^([+][0-9]{8,15}|[0-9]{8,15})$'
+        )
+        && request.resource.data.nationalId is string
+        && request.resource.data.nationalId.size() >= 4
+        && request.resource.data.nationalId.size() <= 32
+        && request.resource.data.email is string
+        && request.resource.data.email.size() >= 5
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.email.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$')
+        && request.resource.data.memberCardNumber is string
+        && request.resource.data.memberCardNumber.matches('^CW-M-[0-9]{6}$')
+        && request.resource.data.sequence is int
+        && request.resource.data.sequence > 0
+        && request.resource.data.createdBy == request.auth.uid
+        && createdAtMatchesRequestTime()
+        && getAfter(
+          /databases/$(database)/documents/customerMemberCardLookups/$(request.resource.data.memberCardNumber)
+        ).data.holderId == holderId
+        && getAfter(
+          /databases/$(database)/documents/customerMemberCardCounters/current
+        ).data.lastSequence == request.resource.data.sequence
+        && getAfter(
+          /databases/$(database)/documents/customerMemberCardCounters/current
+        ).data.lastCardNumber == request.resource.data.memberCardNumber;
+
+      allow update, delete: if isAdmin();
+    }
+
+    match /customerMemberCardLookups/{cardNumber} {
+      allow get: if isVerifiedStaff();
+      allow list: if false;
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'customerId', 'holderId', 'cardNumber', 'sequence',
+          'createdBy', 'createdAt'
+        ])
+        && (
+          request.resource.data.keys().hasAll(['customerId'])
+            && !request.resource.data.keys().hasAny(['holderId'])
+          || request.resource.data.keys().hasAll(['holderId'])
+            && !request.resource.data.keys().hasAny(['customerId'])
+        )
+        && request.resource.data.cardNumber == cardNumber
+        && cardNumber.matches('^CW-M-[0-9]{6}$')
+        && request.resource.data.sequence is int
+        && request.resource.data.sequence > 0
+        && request.resource.data.createdBy == request.auth.uid
+        && createdAtMatchesRequestTime()
+        && (
+          request.resource.data.keys().hasAny(['customerId'])
+            && request.resource.data.customerId is string
+            && memberCardHolderMatches(
+              request.resource.data.customerId,
+              cardNumber,
+              request.resource.data.sequence,
+              request.auth.uid
+            )
+          || request.resource.data.keys().hasAny(['holderId'])
+            && request.resource.data.holderId is string
+            && memberCardHolderMatches(
+              request.resource.data.holderId,
+              cardNumber,
+              request.resource.data.sequence,
+              request.auth.uid
+            )
+        )
+        && getAfter(
+          /databases/$(database)/documents/customerMemberCardCounters/current
+        ).data.lastSequence == request.resource.data.sequence
+        && getAfter(
+          /databases/$(database)/documents/customerMemberCardCounters/current
+        ).data.lastCardNumber == cardNumber;
+
+      allow update, delete: if false;
+    }
+
+    match /customerMemberCardCounters/{counterId} {
+      allow get: if isVerifiedStaff() && counterId == 'current';
+      allow list: if false;
+
+      allow create: if isVerifiedStaff()
+        && counterId == 'current'
+        && request.resource.data.keys().hasOnly([
+          'lastSequence', 'lastCardNumber'
+        ])
+        && request.resource.data.lastSequence == 1
+        && request.resource.data.lastCardNumber.matches('^CW-M-[0-9]{6}$')
+        && memberCardHolderLookupMatches(
+          request.resource.data.lastCardNumber,
+          request.resource.data.lastSequence
+        );
+
+      allow update: if isVerifiedStaff()
+        && counterId == 'current'
+        && request.resource.data.keys().hasOnly([
+          'lastSequence', 'lastCardNumber'
+        ])
+        && resource.data.lastSequence is int
+        && request.resource.data.lastSequence == resource.data.lastSequence + 1
+        && request.resource.data.lastCardNumber.matches('^CW-M-[0-9]{6}$')
+        && memberCardHolderLookupMatches(
+          request.resource.data.lastCardNumber,
+          request.resource.data.lastSequence
+        );
+
+      allow delete: if false;
+    }
+
+    match /staffAccessRequests/{userId} {
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.auth.token.email is string
+        && request.resource.data.keys().hasOnly([
+          'email', 'firstName', 'lastName', 'displayName', 'username',
+          'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+          'phoneCountryIsoCode', 'phoneNationalNumber', 'requestedRole',
+          'status', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'email', 'firstName', 'lastName', 'displayName', 'username',
+          'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+          'phoneCountryIsoCode', 'phoneNationalNumber', 'requestedRole',
+          'status', 'createdAt'
+        ])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() > 0
+        && request.resource.data.username is string
+        && request.resource.data.username.matches('^[a-zA-Z0-9._-]{3,20}$')
+        && existsAfter(
+          /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+        )
+        && getAfter(
+          /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+        ).data.uid == userId
+        && getAfter(
+          /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+        ).data.role == 'staff'
+        && hasValidStaffPersonalData(request.resource.data)
+        && request.resource.data.requestedRole
+          in ['barista', 'cajero', 'cocina']
+        && request.resource.data.status == 'pending'
+        && createdAtMatchesRequestTime();
+
+      allow update: if (
+          request.auth != null
+          && request.auth.uid == userId
+          && resource.data.status == 'pending'
+          && request.auth.token.email is string
+          && request.resource.data.keys().hasOnly([
+            'email', 'firstName', 'lastName', 'displayName', 'username',
+            'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+            'phoneCountryIsoCode', 'phoneNationalNumber', 'requestedRole',
+            'status', 'createdAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'email', 'firstName', 'lastName', 'displayName', 'username',
+            'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+            'phoneCountryIsoCode', 'phoneNationalNumber', 'requestedRole',
+            'status', 'createdAt'
+          ])
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() > 0
+          && request.resource.data.username is string
+          && request.resource.data.username.matches('^[a-zA-Z0-9._-]{3,20}$')
+          && existsAfter(
+            /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+          )
+          && getAfter(
+            /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+          ).data.uid == userId
+          && getAfter(
+            /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
+          ).data.role == 'staff'
+          && hasValidStaffPersonalData(request.resource.data)
+          && request.resource.data.requestedRole
+            in ['barista', 'cajero', 'cocina']
+          && request.resource.data.status == 'pending'
+          && createdAtMatchesRequestTime()
+        ) || (
+          isAdmin()
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'reviewedAt', 'reviewedBy'])
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.reviewedAt == request.time
+          && request.resource.data.reviewedBy == request.auth.uid
+        );
+
+      allow get: if request.auth != null
+        && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow delete: if isAdmin() && resource.data.status == 'rejected';
+    }
+
+    match /managementMessages/{messageId} {
+      allow get, list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'senderUid', 'senderEmail', 'senderName', 'category', 'priority',
+          'title', 'body', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'senderUid', 'senderEmail', 'senderName', 'category', 'priority',
+          'title', 'body', 'createdAt'
+        ])
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.senderEmail == request.auth.token.email
+        && request.resource.data.senderName is string
+        && request.resource.data.senderName.size() <= 120
+        && request.resource.data.category in ['communication', 'directive']
+        && request.resource.data.priority in ['normal', 'high']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 4
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.body is string
+        && request.resource.data.body.size() >= 8
+        && request.resource.data.body.size() <= 3000
+        && createdAtMatchesRequestTime();
+
+      allow update, delete: if false;
+    }
+
+    match /wolvesShopOrders/{orderId} {
+      allow create: if false;
+
+      allow get, list: if isAdmin();
+
+      allow update: if isAdmin()
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'attended'
+        && request.resource.data.attendedBy == request.auth.token.email
+        && request.resource.data.attendedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'attendedAt', 'attendedBy'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /cafeSales/{saleId} {
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'employeeUid', 'employeeEmail', 'date', 'shift', 'attendanceId',
+          'cashSessionId', 'paymentMethod', 'total', 'cashReceived',
+          'changeDue', 'items', 'cafeItems', 'productQuantities',
+          'shopProductQuantities', 'shopVariantQuantities', 'customerUid',
+          'walletTransactionId', 'paidAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'employeeUid', 'employeeEmail', 'date', 'shift', 'attendanceId',
+          'cashSessionId', 'paymentMethod', 'total', 'cashReceived',
+          'changeDue', 'items', 'cafeItems', 'productQuantities', 'paidAt'
+        ])
+        && request.resource.data.employeeUid == request.auth.uid
+        && request.resource.data.employeeEmail == request.auth.token.email
+        && request.resource.data.date is string
+        && request.resource.data.shift in ['morning', 'afternoon', 'night']
+        && request.resource.data.attendanceId
+          == request.resource.data.date + '_' + request.auth.uid
+        && request.resource.data.cashSessionId
+          == request.resource.data.date + '_' + request.auth.uid
+            + '_' + request.resource.data.shift
+        && exists(
+          /databases/$(database)/documents/staffShifts/$(request.resource.data.attendanceId)
+        )
+        && get(
+          /databases/$(database)/documents/staffShifts/$(request.resource.data.attendanceId)
+        ).data.shift == request.resource.data.shift
+        && exists(
+          /databases/$(database)/documents/staffAttendance/$(request.resource.data.attendanceId)
+        )
+        && get(
+          /databases/$(database)/documents/staffAttendance/$(request.resource.data.attendanceId)
+        ).data.clockOutAt == null
+        && exists(
+          /databases/$(database)/documents/cashSessions/$(request.resource.data.cashSessionId)
+        )
+        && get(
+          /databases/$(database)/documents/cashSessions/$(request.resource.data.cashSessionId)
+        ).data.status == 'open'
+        && get(
+          /databases/$(database)/documents/cashSessions/$(request.resource.data.cashSessionId)
+        ).data.employeeUid == request.auth.uid
+        && request.resource.data.paymentMethod in [
+          'cash', 'qr', 'card', 'wallet'
+        ]
+        && request.resource.data.total is number
+        && request.resource.data.total > 0
+        && request.resource.data.cashReceived is number
+        && request.resource.data.changeDue is number
+        && (
+          request.resource.data.paymentMethod == 'cash'
+            && request.resource.data.cashReceived >= request.resource.data.total
+            && request.resource.data.changeDue
+              == request.resource.data.cashReceived - request.resource.data.total
+          || request.resource.data.paymentMethod in ['qr', 'card']
+            && request.resource.data.cashReceived == 0
+            && request.resource.data.changeDue == 0
+          || request.resource.data.paymentMethod == 'wallet'
+            && request.resource.data.cashReceived == 0
+            && request.resource.data.changeDue == 0
+            && request.resource.data.customerUid is string
+            && request.resource.data.walletTransactionId == saleId
+            && existsAfter(walletTransactionPath(saleId))
+            && getAfter(walletTransactionPath(saleId)).data.type == 'posDebit'
+            && getAfter(walletTransactionPath(saleId)).data.ownerUid
+              == request.resource.data.customerUid
+            && getAfter(walletTransactionPath(saleId)).data.amount
+              == request.resource.data.total
+            && getAfter(walletPath(request.resource.data.customerUid)).data.lastTransactionId
+              == saleId
+        )
+        && (
+          request.resource.data.paymentMethod == 'wallet'
+            && 'walletTransactionId' in request.resource.data
+          || request.resource.data.paymentMethod != 'wallet'
+            && !('walletTransactionId' in request.resource.data)
+        )
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && request.resource.data.items.size() <= 30
+        && request.resource.data.cafeItems is list
+        && request.resource.data.cafeItems.size() <= 30
+        && request.resource.data.productQuantities is map
+        && (
+          !('shopProductQuantities' in request.resource.data)
+          || request.resource.data.shopProductQuantities is map
+        )
+        && (
+          !('shopVariantQuantities' in request.resource.data)
+          || request.resource.data.shopVariantQuantities is map
+        )
+        && request.resource.data.paidAt == request.time
+        && (
+          !('customerUid' in request.resource.data)
+          || request.resource.data.customerUid is string
+            && exists(
+              /databases/$(database)/documents/users/$(request.resource.data.customerUid)
+            )
+        );
+
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /pedidos_internos/{orderId} {
+      allow get, list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /kitchenOrders/{orderId} {
+      allow get, list: if isVerifiedKitchenStaff();
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'orderId', 'tableNumber', 'customerName', 'serviceType', 'status',
+          'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'orderId', 'serviceType', 'status', 'createdAt'
+        ])
+        && request.resource.data.orderId == orderId
+        && request.resource.data.serviceType in [
+          'dineIn', 'takeaway', 'delivery'
+        ]
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && (
+          !('tableNumber' in request.resource.data)
+          || request.resource.data.tableNumber is int
+            && request.resource.data.tableNumber >= 1
+            && request.resource.data.tableNumber <= 8
+        )
+        && (
+          !('customerName' in request.resource.data)
+          || request.resource.data.customerName is string
+            && request.resource.data.customerName.size() <= 100
+        )
+        && existsAfter(
+          /databases/$(database)/documents/cafeSales/$(orderId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/cafeSales/$(orderId)
+        ).data.employeeUid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/cafeSales/$(orderId)
+        ).data.cafeItems is list
+        && getAfter(
+          /databases/$(database)/documents/cafeSales/$(orderId)
+        ).data.cafeItems.size() > 0;
+
+      allow update: if isVerifiedKitchenStaff()
+        && (
+          resource.data.status == 'pending'
+          && request.resource.data.status == 'preparing'
+          && request.resource.data.startedBy == request.auth.uid
+          && request.resource.data.startedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'startedBy', 'startedAt'])
+          || resource.data.status == 'preparing'
+          && request.resource.data.status == 'ready'
+          && request.resource.data.completedBy == request.auth.uid
+          && request.resource.data.readyAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'completedBy', 'readyAt'])
+          || resource.data.status == 'ready'
+          && resource.data.completedBy == request.auth.uid
+          && resource.data.readyAt is timestamp
+          && resource.data.readyAt > request.time - duration.value(60, 's')
+          && request.resource.data.status in ['pending', 'preparing']
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'status', 'completedBy', 'readyAt', 'startedBy', 'startedAt'
+            ])
+          && (
+            request.resource.data.status == 'pending'
+            && !('startedBy' in request.resource.data)
+            && !('startedAt' in request.resource.data)
+            || request.resource.data.status == 'preparing'
+            && request.resource.data.startedBy is string
+            && request.resource.data.startedAt is timestamp
+          )
+        );
+
+      allow delete: if false;
+
+      match /items/{itemId} {
+        allow get, list: if isVerifiedKitchenStaff();
+
+        allow create: if isVerifiedStaff()
+          && request.resource.data.keys().hasOnly([
+            'quantity', 'name', 'size', 'modifications', 'position'
+          ])
+          && request.resource.data.keys().hasAll([
+            'quantity', 'name', 'modifications', 'position'
+          ])
+          && request.resource.data.quantity is int
+          && request.resource.data.quantity > 0
+          && request.resource.data.quantity <= 99
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.modifications is list
+          && request.resource.data.modifications.size() <= 10
+          && request.resource.data.position is int
+          && request.resource.data.position >= 0
+          && request.resource.data.position < 30
+          && (
+            !('size' in request.resource.data)
+            || request.resource.data.size is string
+              && request.resource.data.size.size() <= 40
+          )
+          && existsAfter(
+            /databases/$(database)/documents/kitchenOrders/$(orderId)
+          )
+          && getAfter(
+            /databases/$(database)/documents/kitchenOrders/$(orderId)
+          ).data.status == 'pending';
+
+        allow update, delete: if false;
+      }
+    }
+
+    match /cafeOrders/{orderId} {
+      allow get, list: if isVerifiedStaff();
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'saleId', 'employeeUid', 'items', 'status', 'createdAt',
+          'tableNumber'
+        ])
+        && request.resource.data.keys().hasAll([
+          'saleId', 'employeeUid', 'items', 'status', 'createdAt'
+        ])
+        && request.resource.data.saleId == orderId
+        && request.resource.data.employeeUid == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && createdAtMatchesRequestTime()
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && request.resource.data.items.size() <= 30
+        && (
+          !('tableNumber' in request.resource.data)
+          || request.resource.data.tableNumber is int
+            && request.resource.data.tableNumber >= 1
+            && request.resource.data.tableNumber <= 8
+        )
+        && existsAfter(
+          /databases/$(database)/documents/cafeSales/$(orderId)
+        )
+        && getAfter(
+          /databases/$(database)/documents/cafeSales/$(orderId)
+        ).data.employeeUid == request.auth.uid
+        && getAfter(
+          /databases/$(database)/documents/cafeSales/$(orderId)
+        ).data.paidAt == request.time
+        && getAfter(
+          /databases/$(database)/documents/cafeSales/$(orderId)
+        ).data.cafeItems == request.resource.data.items;
+
+      allow update: if isVerifiedStaff()
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'acknowledged'
+        && request.resource.data.acknowledgedBy == request.auth.uid
+        && request.resource.data.acknowledgedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'acknowledgedAt', 'acknowledgedBy'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /facturas_siat/{invoiceId} {
+      allow read, write: if false;
+    }
+
+    match /staffShifts/{assignmentId} {
+      allow get: if isAdmin()
+        || (request.auth != null
+          && resource.data.employeeUid == request.auth.uid);
+      allow list: if isAdmin();
+
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'employeeUid', 'employeeEmail', 'date', 'shift',
+          'assignedBy', 'assignedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'employeeUid', 'employeeEmail', 'date', 'shift',
+          'assignedBy', 'assignedAt'
+        ])
+        && assignmentId
+          == request.resource.data.date + '_' + request.resource.data.employeeUid
+        && request.resource.data.employeeUid is string
+        && request.resource.data.employeeEmail is string
+        && request.resource.data.date is string
+        && request.resource.data.shift in ['morning', 'afternoon', 'night']
+        && request.resource.data.assignedBy == request.auth.uid
+        && request.resource.data.assignedAt == request.time;
+
+      allow delete: if isAdmin();
+    }
+
+    match /staffAttendance/{attendanceId} {
+      allow get: if isAdmin()
+        || (request.auth != null
+          && resource.data.employeeUid == request.auth.uid);
+      allow list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'employeeUid', 'date', 'shift', 'clockInAt', 'clockOutAt'
+        ])
+        && attendanceId == request.resource.data.date + '_' + request.auth.uid
+        && request.resource.data.employeeUid == request.auth.uid
+        && request.resource.data.date is string
+        && request.resource.data.shift in ['morning', 'afternoon', 'night']
+        && exists(
+          /databases/$(database)/documents/staffShifts/$(attendanceId)
+        )
+        && get(
+          /databases/$(database)/documents/staffShifts/$(attendanceId)
+        ).data.shift == request.resource.data.shift
+        && request.resource.data.clockInAt == request.time
+        && request.resource.data.clockOutAt == null;
+
+      allow update: if isVerifiedStaff()
+        && resource.data.employeeUid == request.auth.uid
+        && resource.data.clockOutAt == null
+        && get(
+          /databases/$(database)/documents/cashSessions/$(resource.data.date + '_' + request.auth.uid + '_' + resource.data.shift)
+        ).data.status == 'closed'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['clockOutAt'])
+        && request.resource.data.clockOutAt == request.time;
+
+      allow delete: if false;
+    }
+
+    match /cashSessions/{sessionId} {
+      allow get: if isAdmin()
+        || (request.auth != null
+          && resource.data.employeeUid == request.auth.uid);
+      allow list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'employeeUid', 'date', 'shift', 'openingAmount', 'openedAt',
+          'status', 'closedAt', 'countedAmount', 'closedBy'
+        ])
+        && sessionId == request.resource.data.date + '_'
+          + request.auth.uid + '_' + request.resource.data.shift
+        && request.resource.data.employeeUid == request.auth.uid
+        && request.resource.data.date is string
+        && request.resource.data.shift in ['morning', 'afternoon', 'night']
+        && request.resource.data.openingAmount is number
+        && request.resource.data.openingAmount >= 0
+        && request.resource.data.openedAt == request.time
+        && request.resource.data.status == 'open'
+        && request.resource.data.closedAt == null
+        && request.resource.data.countedAmount == null
+        && request.resource.data.closedBy == null
+        && exists(
+          /databases/$(database)/documents/staffAttendance/$(request.resource.data.date + '_' + request.auth.uid)
+        )
+        && get(
+          /databases/$(database)/documents/staffAttendance/$(request.resource.data.date + '_' + request.auth.uid)
+        ).data.clockOutAt == null;
+
+      allow update: if isVerifiedStaff()
+        && resource.data.employeeUid == request.auth.uid
+        && resource.data.status == 'open'
+        && request.resource.data.status == 'closed'
+        && request.resource.data.closedAt == request.time
+        && request.resource.data.closedBy == request.auth.uid
+        && request.resource.data.countedAmount is number
+        && request.resource.data.countedAmount >= 0
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'closedAt', 'countedAmount', 'closedBy'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /customerComplaints/{complaintId} {
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'customerUid', 'customerEmail', 'shift', 'incident',
+          'feedbackType', 'orderId', 'details', 'autoReply',
+          'statusMessage', 'createdAt', 'status', 'supportCategory',
+          'subject', 'memberCardId', 'attachmentBase64', 'attachmentContentType',
+          'attachmentName'
+        ])
+        && request.resource.data.keys().hasAll([
+          'customerUid', 'customerEmail', 'shift', 'feedbackType', 'incident',
+          'details', 'autoReply', 'statusMessage', 'createdAt', 'status'
+        ])
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.customerEmail == request.auth.token.email
+        && request.auth.token.email_verified == true
+        && request.resource.data.shift in ['morning', 'afternoon', 'night']
+        && request.resource.data.feedbackType
+          in ['suggestion', 'compliment', 'complaint']
+        && request.resource.data.autoReply
+          == (
+            request.resource.data.feedbackType == 'suggestion'
+              ? 'Gracias por compartir tu sugerencia. Gerencia la recibió y la revisará.'
+              : request.resource.data.feedbackType == 'compliment'
+                ? 'Gracias por tu felicitación. Nos alegra compartir la experiencia Coffee Wolves contigo.'
+                : 'Recibimos tu reclamo. Gerencia revisará el caso y podrás consultar aquí su estado.'
+          )
+        && request.resource.data.statusMessage
+          == 'Tu mensaje fue recibido y está pendiente de revisión.'
+        && request.resource.data.incident is string
+        && (
+          !('supportCategory' in request.resource.data)
+          || request.resource.data.supportCategory in [
+            'Mi Bitácora', 'Wolves Member Card', 'Billetera',
+            'Mis Colecciones', 'Mis Coleccionables', 'Álbum Cold Brew',
+            'Wolves Match', 'Hoy nos falta uno', 'Mis Mascotas',
+            'Mis Pedidos', 'Otro'
+          ]
+        )
+        && (
+          !('subject' in request.resource.data)
+          || request.resource.data.subject is string
+            && request.resource.data.subject.size() >= 4
+            && request.resource.data.subject.size() <= 120
+        )
+        && (
+          !('memberCardId' in request.resource.data)
+          || request.resource.data.memberCardId is string
+            && request.resource.data.memberCardId.size() > 0
+            && request.resource.data.memberCardId.size() <= 120
+        )
+        && (
+          !('attachmentBase64' in request.resource.data)
+          && !('attachmentContentType' in request.resource.data)
+          && !('attachmentName' in request.resource.data)
+          || 'attachmentBase64' in request.resource.data
+            && request.resource.data.attachmentBase64 is string
+            && request.resource.data.attachmentBase64.size() <= 600000
+            && request.resource.data.attachmentContentType == 'image/jpeg'
+            && request.resource.data.attachmentName is string
+            && request.resource.data.attachmentName.size() <= 120
+        )
+        && (!('orderId' in request.resource.data)
+          || request.resource.data.orderId is string
+            && request.resource.data.orderId.size() <= 100)
+        && request.resource.data.details is string
+        && request.resource.data.details.size() >= 10
+        && request.resource.data.details.size() <= 2000
+        && createdAtMatchesRequestTime()
+        && request.resource.data.status == 'new';
+
+      allow get, list: if isAdmin()
+        || (request.auth != null
+          && resource.data.customerUid == request.auth.uid);
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'statusMessage'])
+        && request.resource.data.status in ['new', 'reviewing', 'resolved']
+        && request.resource.data.statusMessage
+          == (
+            request.resource.data.status == 'new'
+              ? 'Tu mensaje fue recibido y está pendiente de revisión.'
+              : request.resource.data.status == 'reviewing'
+                ? 'Gerencia está revisando tu mensaje. Te avisaremos aquí cuando haya una actualización.'
+                : 'Gerencia marcó tu caso como resuelto. Si aún necesitas ayuda, envía otro mensaje.'
+          );
+      allow delete: if false;
+    }
+
+    match /passportTastingNotes/{noteId} {
+      allow get: if request.auth != null
+        && noteId.matches('^' + request.auth.uid + '__.*$');
+      allow list: if false;
+
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'ownerUid', 'methodName', 'notes', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'ownerUid', 'methodName', 'notes', 'updatedAt'
+        ])
+        && request.resource.data.ownerUid == request.auth.uid
+        && validPassportMethod(request.resource.data.methodName)
+        && noteId
+          == request.auth.uid + '__' + request.resource.data.methodName
+        && request.resource.data.notes is string
+        && request.resource.data.notes.size() <= 2000
+        && updatedAtMatchesRequestTime();
+
+      allow update: if request.auth != null
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.methodName == resource.data.methodName
+        && validPassportMethod(request.resource.data.methodName)
+        && noteId
+          == request.auth.uid + '__' + request.resource.data.methodName
+        && request.resource.data.notes is string
+        && request.resource.data.notes.size() <= 2000
+        && updatedAtMatchesRequestTime()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['notes', 'updatedAt']);
+
+      allow delete: if request.auth != null
+        && resource.data.ownerUid == request.auth.uid;
+    }
+
+    match /passportProgress/{customerUid} {
+      allow get: if request.auth != null
+        && (request.auth.uid == customerUid || isVerifiedStaff());
+      allow list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && hasActiveMemberCard(customerUid)
+        && request.resource.data.keys().hasOnly([
+          'customerUid', 'completedMethods', 'completedCount', 'rewardClaimed',
+          'updatedBy', 'updatedAt', 'lastStampId', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'customerUid', 'completedMethods', 'completedCount',
+          'rewardClaimed', 'updatedBy', 'updatedAt', 'lastStampId',
+          'createdAt'
+        ])
+        && request.resource.data.customerUid == customerUid
+        && request.resource.data.completedMethods is list
+        && request.resource.data.completedMethods.size() == 1
+        && validPassportMethod(request.resource.data.completedMethods[0])
+        && request.resource.data.completedCount == 1
+        && request.resource.data.rewardClaimed == false
+        && request.resource.data.updatedBy == request.auth.uid
+        && updatedAtMatchesRequestTime()
+        && createdAtMatchesRequestTime()
+        && request.resource.data.lastStampId is string
+        && passportStampMatches(
+          request.resource.data.lastStampId,
+          customerUid,
+          request.resource.data.completedMethods[0]
+        );
+
+      allow update: if isVerifiedStaff()
+        && hasActiveMemberCard(customerUid)
+        && request.resource.data.customerUid == customerUid
+        && (
+          resource.data.rewardClaimed == false
+          && request.resource.data.rewardClaimed == false
+          && request.resource.data.completedMethods is list
+          && request.resource.data.completedMethods.size()
+            == resource.data.completedMethods.size() + 1
+          && request.resource.data.completedMethods.hasAll(
+            resource.data.completedMethods
+          )
+          && !resource.data.completedMethods.hasAny([
+            request.resource.data.completedMethods[
+              request.resource.data.completedMethods.size() - 1
+            ]
+          ])
+          && request.resource.data.completedCount
+            == resource.data.completedCount + 1
+          && request.resource.data.updatedBy == request.auth.uid
+          && updatedAtMatchesRequestTime()
+          && request.resource.data.lastStampId is string
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'completedMethods', 'completedCount', 'updatedBy',
+            'updatedAt', 'lastStampId'
+          ])
+          && passportStampMatches(
+            request.resource.data.lastStampId,
+            customerUid,
+            request.resource.data.completedMethods[
+              request.resource.data.completedMethods.size() - 1
+            ]
+          )
+          || resource.data.completedCount == 9
+            && resource.data.rewardClaimed == false
+            && completePassport(resource.data.completedMethods)
+            && request.resource.data.rewardClaimed == true
+            && request.resource.data.rewardMugCode is string
+            && request.resource.data.rewardClaimedBy == request.auth.uid
+            && request.resource.data.rewardClaimedAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'rewardClaimed', 'rewardMugCode',
+                'rewardClaimedBy', 'rewardClaimedAt'
+              ])
+            && getAfter(
+              /databases/$(database)/documents/legendaryMugRedemptions/$(request.resource.data.rewardMugCode)
+            ).data.customerUid == customerUid
+            && getAfter(
+              /databases/$(database)/documents/legendaryMugRedemptions/$(request.resource.data.rewardMugCode)
+            ).data.employeeUid == request.auth.uid
+        );
+
+      allow delete: if false;
+    }
+
+    match /passportMethodStamps/{stampId} {
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'customerUid', 'employeeUid', 'employeeEmail',
+          'methodName', 'stampedAt'
+        ])
+        && request.resource.data.customerUid is string
+        && request.resource.data.employeeUid == request.auth.uid
+        && request.resource.data.employeeEmail == request.auth.token.email
+        && validPassportMethod(request.resource.data.methodName)
+        && request.resource.data.stampedAt == request.time
+        && getAfter(
+          /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+        ).data.lastStampId == stampId
+        && getAfter(
+          /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+        ).data.completedMethods.hasAny([request.resource.data.methodName]);
+
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /legendaryMugRedemptions/{mugCode} {
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'customerUid', 'employeeUid', 'employeeEmail', 'mugCode',
+          'redeemedAt'
+        ])
+        && request.resource.data.customerUid is string
+        && request.resource.data.employeeUid == request.auth.uid
+        && request.resource.data.employeeEmail == request.auth.token.email
+        && request.resource.data.mugCode == mugCode
+        && mugCode.matches('^[A-Z0-9-]{4,80}$')
+        && request.resource.data.redeemedAt == request.time
+        && getAfter(
+          /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+        ).data.completedCount == 9
+        && completePassport(getAfter(
+          /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+        ).data.completedMethods)
+        && getAfter(
+          /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+        ).data.rewardClaimed == true
+        && getAfter(
+          /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+        ).data.rewardMugCode == mugCode;
+
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /products/{productId} {
+      allow read: if request.auth != null || resource.data.isVisible == true;
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'id', 'name', 'category', 'family', 'description', 'price',
+          'stock', 'stockBySize', 'isVisible', 'lastSaleId', 'sku'
+        ])
+        && request.resource.data.keys().hasAll([
+          'id', 'name', 'category', 'price', 'stock', 'isVisible'
+        ])
+        && request.resource.data.id == productId
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.category in [
+          'food', 'beverage', 'beverages', 'smoothies', 'combos_pack',
+          'comida', 'bebida', 'pet_friendly',
+          'merch', 'merchandising', 'merch_wolves_shop', 'wolves_shop',
+          'moda_alfa', 'accesorios', 'estilo_de_vida', 'taza', 'tazas',
+          'tazas_coleccionables', 'coleccionables', 'collectibles', 'metodos'
+        ]
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0
+        && request.resource.data.stock is int
+        && request.resource.data.stock >= 0
+        && validShopSizeStock(request.resource.data)
+        && request.resource.data.isVisible is bool
+        && (
+          !('family' in request.resource.data)
+          || request.resource.data.family is string
+        )
+        && (
+          !('description' in request.resource.data)
+          || request.resource.data.description is string
+        )
+        && (
+          !('lastSaleId' in request.resource.data)
+          || request.resource.data.lastSaleId is string
+        )
+        && (
+          !('sku' in request.resource.data)
+          || request.resource.data.sku is string
+            && request.resource.data.sku.size() <= 64
+        );
+      allow update: if (
+        isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'category', 'family', 'description', 'price',
+          'stock', 'stockBySize', 'isVisible', 'sku'
+        ])
+        && (
+          !('id' in request.resource.data)
+          || request.resource.data.id == productId
+        )
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.category in [
+          'food', 'beverage', 'beverages', 'smoothies', 'combos_pack',
+          'comida', 'bebida', 'pet_friendly',
+          'merch', 'merchandising', 'merch_wolves_shop', 'wolves_shop',
+          'moda_alfa', 'accesorios', 'estilo_de_vida', 'taza', 'tazas',
+          'tazas_coleccionables', 'coleccionables', 'collectibles', 'metodos'
+        ]
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0
+        && request.resource.data.stock is int
+        && request.resource.data.stock >= 0
+        && validShopSizeStock(request.resource.data)
+        && request.resource.data.isVisible is bool
+        && (
+          !('family' in request.resource.data)
+          || request.resource.data.family is string
+        )
+        && (
+          !('description' in request.resource.data)
+          || request.resource.data.description is string
+        )
+        && (
+          !('sku' in request.resource.data)
+          || request.resource.data.sku is string
+            && request.resource.data.sku.size() <= 64
+        )
+      ) || (
+        isVerifiedStaff()
+        && resource.data.family == 'Merch Wolves Shop'
+        && resource.data.isVisible == true
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stock', 'stockBySize', 'lastSaleId'])
+        && resource.data.stock is int
+        && request.resource.data.stock is int
+        && request.resource.data.stock >= 0
+        && request.resource.data.stock < resource.data.stock
+        && request.resource.data.lastSaleId is string
+        && getAfter(
+          cafeSaleDocumentPath(request.resource.data.lastSaleId)
+        ).data.employeeUid == request.auth.uid
+        && getAfter(
+          cafeSaleDocumentPath(request.resource.data.lastSaleId)
+        ).data.shopProductQuantities[productId]
+          == resource.data.stock - request.resource.data.stock
+        && (
+          !('stockBySize' in resource.data)
+            && !('stockBySize' in request.resource.data)
+          || 'stockBySize' in resource.data
+            && 'stockBySize' in request.resource.data
+            && validShopSizeStock(request.resource.data)
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId] is map
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('S', 0) is int
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('S', 0) >= 0
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('M', 0) is int
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('M', 0) >= 0
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('L', 0) is int
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('L', 0) >= 0
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('XL', 0) is int
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('XL', 0) >= 0
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('2XL', 0) is int
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('2XL', 0) >= 0
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('3XL', 0) is int
+            && getAfter(
+              cafeSaleDocumentPath(request.resource.data.lastSaleId)
+            ).data.shopVariantQuantities[productId].get('3XL', 0) >= 0
+            && request.resource.data.stockBySize.get('S', 0)
+              == resource.data.stockBySize.get('S', 0)
+                - getAfter(
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
+                ).data.shopVariantQuantities[productId].get('S', 0)
+            && request.resource.data.stockBySize.get('M', 0)
+              == resource.data.stockBySize.get('M', 0)
+                - getAfter(
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
+                ).data.shopVariantQuantities[productId].get('M', 0)
+            && request.resource.data.stockBySize.get('L', 0)
+              == resource.data.stockBySize.get('L', 0)
+                - getAfter(
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
+                ).data.shopVariantQuantities[productId].get('L', 0)
+            && request.resource.data.stockBySize.get('XL', 0)
+              == resource.data.stockBySize.get('XL', 0)
+                - getAfter(
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
+                ).data.shopVariantQuantities[productId].get('XL', 0)
+            && request.resource.data.stockBySize.get('2XL', 0)
+              == resource.data.stockBySize.get('2XL', 0)
+                - getAfter(
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
+                ).data.shopVariantQuantities[productId].get('2XL', 0)
+            && request.resource.data.stockBySize.get('3XL', 0)
+              == resource.data.stockBySize.get('3XL', 0)
+                - getAfter(
+                  cafeSaleDocumentPath(request.resource.data.lastSaleId)
+                ).data.shopVariantQuantities[productId].get('3XL', 0)
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /cafeCatalog/{productId} {
+      allow read: if request.auth != null;
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'name', 'category', 'description', 'price', 'stock',
+          'stockTracked', 'isAvailable', 'isVisible', 'isDeleted', 'updatedBy',
+          'updatedAt', 'familyId', 'familyName', 'imageUrl', 'hasImage',
+          'inventorySource'
+        ])
+        && request.resource.data.keys().hasAll([
+          'name', 'category', 'description', 'price', 'stock',
+          'stockTracked', 'isAvailable', 'isVisible', 'isDeleted',
+          'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.category is string
+        && request.resource.data.description is string
+        && request.resource.data.stock is int
+        && request.resource.data.stock >= 0
+        && request.resource.data.stockTracked is bool
+        && request.resource.data.isAvailable is bool
+        && request.resource.data.isVisible is bool
+        && request.resource.data.isDeleted is bool
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0
+        && request.resource.data.updatedBy == request.auth.uid
+        && updatedAtMatchesRequestTime()
+        && (!('familyId' in request.resource.data)
+          || request.resource.data.familyId is string)
+        && (!('familyName' in request.resource.data)
+          || request.resource.data.familyName is string)
+        && (!('imageUrl' in request.resource.data)
+          || request.resource.data.imageUrl is string)
+        && (!('hasImage' in request.resource.data)
+          || request.resource.data.hasImage is bool)
+        && (!('inventorySource' in request.resource.data)
+          || request.resource.data.inventorySource == 'products');
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'category', 'description', 'price', 'stock',
+          'stockTracked', 'isAvailable', 'isVisible', 'isDeleted', 'updatedBy',
+          'updatedAt', 'lastSaleId', 'familyId', 'familyName', 'imageUrl',
+          'hasImage', 'family', 'inventorySource'
+        ])
+        && request.resource.data.keys().hasAll([
+          'name', 'category', 'description', 'price', 'stock',
+          'stockTracked', 'isAvailable', 'isVisible', 'isDeleted',
+          'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.category is string
+        && request.resource.data.description is string
+        && request.resource.data.stock is int
+        && request.resource.data.stock >= 0
+        && request.resource.data.stockTracked is bool
+        && request.resource.data.isAvailable is bool
+        && request.resource.data.isVisible is bool
+        && request.resource.data.isDeleted is bool
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0
+        && request.resource.data.updatedBy == request.auth.uid
+        && updatedAtMatchesRequestTime()
+        && (!('familyId' in request.resource.data)
+          || !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['familyId'])
+          || request.resource.data.familyId is string)
+        && (!('familyName' in request.resource.data)
+          || !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['familyName'])
+          || request.resource.data.familyName is string)
+        && (!('imageUrl' in request.resource.data)
+          || !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['imageUrl'])
+          || request.resource.data.imageUrl is string)
+        && (!('hasImage' in request.resource.data)
+          || !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['hasImage'])
+          || request.resource.data.hasImage is bool)
+        && (!('inventorySource' in request.resource.data)
+          || !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['inventorySource'])
+          || request.resource.data.inventorySource == 'products')
+        || isVerifiedStaff()
+          && resource.data.stockTracked == true
+          && request.resource.data.stock is int
+          && request.resource.data.stock >= 0
+          && request.resource.data.stock < resource.data.stock
+          && request.resource.data.lastSaleId is string
+          && getAfter(
+            cafeSaleDocumentPath(request.resource.data.lastSaleId)
+          ).data.employeeUid == request.auth.uid
+          && getAfter(
+            cafeSaleDocumentPath(request.resource.data.lastSaleId)
+          ).data.productQuantities[productId]
+            == resource.data.stock - request.resource.data.stock
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['stock', 'lastSaleId']);
+
+      allow delete: if isAdmin();
+    }
+
+    match /cafeFamilies/{familyId} {
+      allow read: if request.auth != null;
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'name', 'isDeleted', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'name', 'isDeleted', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.isDeleted is bool
+        && request.resource.data.updatedBy == request.auth.uid
+        && updatedAtMatchesRequestTime();
+      allow delete: if isAdmin();
+    }
+
+    match /managementAnnouncements/{announcementId} {
+      allow read: if isAdmin() || resource.data.isActive == true;
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'type', 'title', 'description', 'dateLabel', 'isActive',
+          'createdAt', 'updatedAt', 'updatedBy'
+        ])
+        && request.resource.data.keys().hasAll([
+          'type', 'title', 'description', 'isActive',
+          'createdAt', 'updatedAt', 'updatedBy'
+        ])
+        && request.resource.data.type in ['promotion', 'event']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 2000
+        && (!('dateLabel' in request.resource.data)
+          || request.resource.data.dateLabel is string
+            && request.resource.data.dateLabel.size() <= 80)
+        && request.resource.data.isActive is bool
+        && createdAtMatchesRequestTime()
+        && updatedAtMatchesRequestTime()
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'type', 'title', 'description', 'dateLabel', 'isActive',
+          'updatedAt', 'updatedBy'
+        ])
+        && request.resource.data.type in ['promotion', 'event']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 2000
+        && (!('dateLabel' in request.resource.data)
+          || request.resource.data.dateLabel is string
+            && request.resource.data.dateLabel.size() <= 80)
+        && request.resource.data.isActive is bool
+        && updatedAtMatchesRequestTime()
+        && request.resource.data.updatedBy == request.auth.uid;
+
+      allow delete: if isAdmin();
+    }
+
+    match /wolvesShopFallbackExclusions/{productId} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly(['isExcluded', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['isExcluded', 'updatedAt'])
+        && request.resource.data.isExcluded == true
+        && updatedAtMatchesRequestTime();
+      allow delete: if isAdmin();
+    }
+
+    match /cafeMenuImages/{productId} {
+      allow read: if request.auth != null
+        || productId.matches('^wolves-shop-[A-Za-z0-9_-]+$');
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'imageBase64', 'contentType', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'imageBase64', 'contentType', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.imageBase64 is string
+        && request.resource.data.imageBase64.size() <= 700000
+        && request.resource.data.contentType == 'image/jpeg'
+        && request.resource.data.updatedBy == request.auth.uid
+        && updatedAtMatchesRequestTime();
+      allow delete: if isAdmin();
+    }
+
+    match /coldBrewAlbums/{customerUid} {
+      function validFigureUpdate() {
+        let previousFigures = resource.data.get('figures', []);
+        let updatedFigures = request.resource.data.figures;
+        let redemptionPath =
+          /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId);
+        let figureId = getAfter(redemptionPath).data.figureId;
+        return previousFigures is list
+          && validColdBrewFigureList(updatedFigures)
+          && updatedFigures.hasAll(previousFigures)
+          && figureId in coldBrewFigureIds()
+          && figureId in updatedFigures
+          && updatedFigures.size() == previousFigures.size()
+            + (figureId in previousFigures ? 0 : 1);
+      }
+
+      allow get: if request.auth != null
+        && (request.auth.uid == customerUid || isVerifiedStaff());
+      allow list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'customerUid', 'stamps', 'figures', 'updatedAt', 'updatedBy',
+          'lastRedemptionId'
+        ])
+        && request.resource.data.customerUid == customerUid
+        && request.resource.data.stamps == 1
+        && validColdBrewFigureList(request.resource.data.figures)
+        && request.resource.data.figures.size() == 1
+        && updatedAtMatchesRequestTime()
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.lastRedemptionId is string
+        && request.resource.data.figures[0]
+          == getAfter(
+            /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId)
+          ).data.figureId
+        && auditMatches(
+          request.resource.data.lastRedemptionId,
+          customerUid,
+          'coldBrewStamp',
+          getAfter(
+            /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId)
+          ).data.rewardId
+        );
+
+      allow update: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'customerUid', 'stamps', 'figures', 'updatedAt', 'updatedBy',
+          'lastRedemptionId'
+        ])
+        && request.resource.data.customerUid == customerUid
+        && request.resource.data.stamps == resource.data.stamps + 1
+        && validFigureUpdate()
+        && updatedAtMatchesRequestTime()
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.lastRedemptionId is string
+        && auditMatches(
+          request.resource.data.lastRedemptionId,
+          customerUid,
+          'coldBrewStamp',
+          getAfter(
+            /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId)
+          ).data.rewardId
+        );
+
+      allow delete: if false;
+    }
+
+    match /coldBrewTastingNotes/{noteId} {
+      allow get, list: if request.auth != null
+        && (resource.data.customerUid == request.auth.uid
+          || isVerifiedStaff());
+      allow create: if request.auth != null
+        && request.auth.uid == request.resource.data.customerUid
+        && request.resource.data.keys().hasOnly([
+          'customerUid', 'flavorProfile', 'rating', 'createdAt'
+        ])
+        && request.resource.data.flavorProfile in [
+          'chocolate', 'fruity', 'citrus', 'floral', 'nutty', 'smooth'
+        ]
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && createdAtMatchesRequestTime();
+      allow update, delete: if false;
+    }
+
+    match /collectibleCharacters/{modelCode} {
+      allow get: if isVerifiedStaff();
+      allow list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && modelCode.matches('^CW-(PLUSH-00[1-9]|CUP-00[7-9])$')
+        && request.resource.data.keys().hasOnly([
+          'modelCode', 'name', 'edition', 'createdAt', 'createdBy'
+        ])
+        && request.resource.data.modelCode == modelCode
+        && validCollectibleModel(modelCode, request.resource.data.name)
+        && request.resource.data.edition == 'Original Collection'
+        && createdAtMatchesRequestTime()
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow update, delete: if false;
+    }
+
+    match /collectiblePlushCounters/{modelCode} {
+      allow get: if isVerifiedStaff();
+      allow list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && modelCode.matches('^CW-(PLUSH-00[1-9]|CUP-00[7-9])$')
+        && request.resource.data.keys().hasOnly(['lastSequence'])
+        && request.resource.data.lastSequence is int
+        && request.resource.data.lastSequence >= 1
+        && request.resource.data.lastSequence <= 8;
+
+      allow update: if isVerifiedStaff()
+        && modelCode.matches('^CW-(PLUSH-00[1-9]|CUP-00[7-9])$')
+        && request.resource.data.keys().hasOnly(['lastSequence'])
+        && resource.data.lastSequence is int
+        && request.resource.data.lastSequence is int
+        && request.resource.data.lastSequence > resource.data.lastSequence
+        && request.resource.data.lastSequence <= resource.data.lastSequence + 8
+        && request.resource.data.lastSequence <= 9999;
+
+      allow delete: if false;
+    }
+
+    match /collectiblePlushes/{code} {
+      allow get: if isVerifiedStaff()
+        || isAdmin()
+        || (request.auth != null && resource.data.claimedBy == request.auth.uid);
+      allow list: if isVerifiedStaff()
+        || (request.auth != null
+          && resource.data.claimedBy == request.auth.uid);
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'code', 'modelCode', 'character', 'serial', 'sequence', 'edition',
+          'createdBy', 'createdAt', 'claimedBy', 'claimedAt',
+          'inventoryStatus',
+          'claimedByEmployee'
+        ])
+        && request.resource.data.code == code
+        && code.matches('^CW-(PLUSH-00[1-9]|CUP-00[7-9])-[0-9]{4}$')
+        && request.resource.data.modelCode is string
+        && validCollectibleModel(
+          request.resource.data.modelCode,
+          request.resource.data.character
+        )
+        && code.matches(
+          '^' + request.resource.data.modelCode + '-[0-9]{4}$'
+        )
+        && request.resource.data.serial is string
+        && request.resource.data.serial.matches('^[0-9]{4}$')
+        && request.resource.data.serial != '0000'
+        && request.resource.data.sequence is int
+        && request.resource.data.sequence > 0
+        && code == request.resource.data.modelCode
+          + '-' + request.resource.data.serial
+        && request.resource.data.edition == 'Original Collection'
+        && request.resource.data.inventoryStatus == 'IN_STOCK'
+        && request.resource.data.createdBy == request.auth.uid
+        && createdAtMatchesRequestTime()
+        && request.resource.data.claimedBy == null
+        && request.resource.data.claimedAt == null
+        && request.resource.data.claimedByEmployee == null
+        && existsAfter(
+          /databases/$(database)/documents/collectiblePlushCounters/$(request.resource.data.modelCode)
+        )
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushCounters/$(request.resource.data.modelCode)
+        ).data.lastSequence is int;
+
+      allow update: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'code', 'modelCode', 'character', 'serial', 'sequence', 'edition',
+          'createdBy', 'createdAt', 'claimedBy', 'claimedByName',
+          'claimedAt', 'claimedByEmployee', 'pendingTransferId',
+          'inventoryStatus'
+        ])
+        && (
+          isVerifiedStaff()
+            && resource.data.claimedBy == null
+            && !exists(
+              /databases/$(database)/documents/plushAdoptions/$(code)
+            )
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'claimedBy', 'claimedByName', 'claimedAt', 'claimedByEmployee',
+                'inventoryStatus'
+              ])
+            && (
+              request.resource.data.claimedBy == null
+              || request.resource.data.claimedBy is string
+            )
+            && (
+              request.resource.data.claimedByName == null
+              || request.resource.data.claimedByName is string
+            )
+            && request.resource.data.claimedAt == request.time
+            && request.resource.data.claimedByEmployee == request.auth.uid
+            && request.resource.data.inventoryStatus == 'ADOPTED'
+            && (
+              !('inventoryStatus' in resource.data)
+              || resource.data.inventoryStatus == 'IN_STOCK'
+            )
+            && getAfter(
+              /databases/$(database)/documents/plushAdoptions/$(code)
+            ).data.code == code
+          || request.auth.token.firebase.sign_in_provider != 'anonymous'
+            && resource.data.claimedBy is string
+            && resource.data.claimedBy == request.auth.uid
+            && !('pendingTransferId' in resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['pendingTransferId'])
+            && request.resource.data.pendingTransferId is string
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.pendingTransferId)
+            ).data.fromUid == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.pendingTransferId)
+            ).data.collectibleCode == code
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.pendingTransferId)
+            ).data.status == 'pending'
+          || request.auth.token.firebase.sign_in_provider != 'anonymous'
+            && resource.data.pendingTransferId is string
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'claimedBy', 'claimedByName', 'pendingTransferId'
+              ])
+            && request.resource.data.claimedBy is string
+            && request.resource.data.claimedByName == null
+            && !('pendingTransferId' in request.resource.data)
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.status == 'accepted'
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.fromUid == resource.data.claimedBy
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.toUid == request.resource.data.claimedBy
+            && request.auth.uid == request.resource.data.claimedBy
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.collectibleCode == code
+          || request.auth.token.firebase.sign_in_provider != 'anonymous'
+            && resource.data.pendingTransferId is string
+            && resource.data.claimedBy == request.auth.uid
+            && !('pendingTransferId' in request.resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['pendingTransferId'])
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.status in ['rejected', 'cancelled']
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.fromUid == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.collectibleCode == code
+          || request.auth.token.firebase.sign_in_provider != 'anonymous'
+            && resource.data.pendingTransferId is string
+            && request.resource.data.claimedBy == resource.data.claimedBy
+            && !('pendingTransferId' in request.resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['pendingTransferId'])
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.status == 'rejected'
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.toUid == request.auth.uid
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.fromUid == resource.data.claimedBy
+            && getAfter(
+              /databases/$(database)/documents/plushOwnershipTransfers/$(resource.data.pendingTransferId)
+            ).data.collectibleCode == code
+        );
+
+      allow delete: if false;
+    }
+
+    match /plushAuthenticity/{code} {
+      allow get: if true;
+      allow list: if false;
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'code', 'modelCode', 'character', 'serial', 'sequence', 'edition',
+          'status', 'registeredAt', 'adoptedAt'
+        ])
+        && request.resource.data.code == code
+        && code.matches('^CW-(PLUSH-00[1-9]|CUP-00[7-9])-[0-9]{4}$')
+        && validCollectibleModel(
+          request.resource.data.modelCode,
+          request.resource.data.character
+        )
+        && request.resource.data.serial is string
+        && request.resource.data.serial.matches('^[0-9]{4}$')
+        && request.resource.data.sequence is int
+        && code == request.resource.data.modelCode
+          + '-' + request.resource.data.serial
+        && request.resource.data.edition == 'Original Collection'
+        && request.resource.data.status == 'available'
+        && request.resource.data.registeredAt == request.time
+        && request.resource.data.adoptedAt == null
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushes/$(code)
+        ).data.code == code
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushes/$(code)
+        ).data.claimedBy == null;
+
+      allow update: if isVerifiedStaff()
+        && resource.data.status == 'available'
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'adoptedAt'])
+        && request.resource.data.status == 'adopted'
+        && request.resource.data.adoptedAt == request.time
+        && getAfter(
+          /databases/$(database)/documents/plushAdoptions/$(code)
+        ).data.code == code;
+
+      allow delete: if false;
+    }
+
+    match /plushAdoptions/{code} {
+      allow get: if isVerifiedStaff()
+        || (request.auth != null && resource.data.ownerUid == request.auth.uid);
+      allow list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'code', 'modelCode', 'serial', 'sequence', 'character', 'ownerUid',
+          'ownerName', 'employeeUid', 'employeeEmail', 'adoptedAt', 'saleId'
+        ])
+        && request.resource.data.code == code
+        && request.resource.data.employeeUid == request.auth.uid
+        && request.resource.data.employeeEmail == request.auth.token.email
+        && request.resource.data.adoptedAt == request.time
+        && (
+          !('saleId' in request.resource.data)
+          || exists(
+            /databases/$(database)/documents/cafeSales/$(request.resource.data.saleId)
+          )
+        )
+        && (
+          request.resource.data.ownerUid == null
+          || exists(
+            /databases/$(database)/documents/users/$(request.resource.data.ownerUid)
+          )
+        )
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushes/$(code)
+        ).data.claimedBy == request.resource.data.ownerUid
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushes/$(code)
+        ).data.claimedByName == request.resource.data.ownerName
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushes/$(code)
+        ).data.claimedByEmployee == request.resource.data.employeeUid
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushes/$(code)
+        ).data.modelCode == request.resource.data.modelCode
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushes/$(code)
+        ).data.serial == request.resource.data.serial
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushes/$(code)
+        ).data.sequence == request.resource.data.sequence
+        && getAfter(
+          /databases/$(database)/documents/collectiblePlushes/$(code)
+        ).data.character == request.resource.data.character
+        && getAfter(
+          /databases/$(database)/documents/plushAuthenticity/$(code)
+        ).data.status == 'adopted'
+        && getAfter(
+          /databases/$(database)/documents/plushAuthenticity/$(code)
+        ).data.adoptedAt == request.resource.data.adoptedAt;
+
+      allow update, delete: if false;
+    }
+
+    match /plushCertificates/{code} {
+      allow get: if isVerifiedStaff()
+        || (request.auth != null && resource.data.ownerUid == request.auth.uid);
+      allow list: if isAdmin();
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'certificateNumber', 'code', 'modelCode', 'serial', 'sequence',
+          'character', 'edition', 'version', 'ownerUid', 'ownerName',
+          'adoptedAt', 'saleId'
+        ])
+        && request.resource.data.code == code
+        && request.resource.data.certificateNumber == 'WOC-' + code
+        && request.resource.data.edition == 'Original Collection'
+        && request.resource.data.version == 1
+        && request.resource.data.adoptedAt == request.time
+        && (
+          !('saleId' in request.resource.data)
+          || request.resource.data.saleId
+            == getAfter(
+              /databases/$(database)/documents/plushAdoptions/$(code)
+            ).data.saleId
+        )
+        && getAfter(
+          /databases/$(database)/documents/plushAdoptions/$(code)
+        ).data.code == code
+        && getAfter(
+          /databases/$(database)/documents/plushAdoptions/$(code)
+        ).data.modelCode == request.resource.data.modelCode
+        && getAfter(
+          /databases/$(database)/documents/plushAdoptions/$(code)
+        ).data.serial == request.resource.data.serial
+        && getAfter(
+          /databases/$(database)/documents/plushAdoptions/$(code)
+        ).data.sequence == request.resource.data.sequence
+        && getAfter(
+          /databases/$(database)/documents/plushAdoptions/$(code)
+        ).data.character == request.resource.data.character
+        && getAfter(
+          /databases/$(database)/documents/plushAdoptions/$(code)
+        ).data.ownerUid == request.resource.data.ownerUid
+        && getAfter(
+          /databases/$(database)/documents/plushAdoptions/$(code)
+        ).data.ownerName == request.resource.data.ownerName
+        && getAfter(
+          /databases/$(database)/documents/plushAdoptions/$(code)
+        ).data.adoptedAt == request.resource.data.adoptedAt
+        && (
+          !('saleId' in request.resource.data)
+          || getAfter(
+            /databases/$(database)/documents/plushAdoptions/$(code)
+          ).data.saleId == request.resource.data.saleId
+        );
+
+      allow update: if request.auth != null
+          && resource.data.ownerUid is string
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['ownerUid', 'ownerName'])
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerName == null
+          && get(
+            /databases/$(database)/documents/collectiblePlushes/$(code)
+          ).data.pendingTransferId is string
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransfers/$(get(/databases/$(database)/documents/collectiblePlushes/$(code)).data.pendingTransferId)
+          ).data.collectibleCode == code
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransfers/$(get(/databases/$(database)/documents/collectiblePlushes/$(code)).data.pendingTransferId)
+          ).data.fromUid == resource.data.ownerUid
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransfers/$(get(/databases/$(database)/documents/collectiblePlushes/$(code)).data.pendingTransferId)
+          ).data.toUid == request.auth.uid
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransfers/$(get(/databases/$(database)/documents/collectiblePlushes/$(code)).data.pendingTransferId)
+          ).data.status == 'accepted';
+
+      allow delete: if false;
+    }
+
+    match /plushOwnershipTransfers/{transferId} {
+      allow get, list: if request.auth != null
+          && (
+            resource.data.fromUid == request.auth.uid
+            || resource.data.toUid == request.auth.uid
+            || isVerifiedStaff()
+            || isAdmin()
+          );
+
+      allow create: if request.auth != null
+          && request.auth.token.firebase.sign_in_provider != 'anonymous'
+          && request.resource.data.keys().hasOnly([
+            'collectibleCode', 'fromUid', 'toUid', 'status',
+            'requestedAt', 'respondedAt', 'lastHistoryId'
+          ])
+          && request.resource.data.collectibleCode.matches(
+            '^CW-(PLUSH-00[1-9]|CUP-00[7-9])-[0-9]{4}$'
+          )
+          && request.resource.data.fromUid == request.auth.uid
+          && request.resource.data.toUid is string
+          && request.resource.data.toUid != request.auth.uid
+          && exists(
+            /databases/$(database)/documents/users/$(request.resource.data.toUid)
+          )
+          && request.resource.data.status == 'pending'
+          && request.resource.data.requestedAt == request.time
+          && request.resource.data.respondedAt == null
+          && request.resource.data.lastHistoryId is string
+          && existsAfter(
+            /databases/$(database)/documents/plushOwnershipTransferHistory/$(request.resource.data.lastHistoryId)
+          )
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransferHistory/$(request.resource.data.lastHistoryId)
+          ).data.transferId == transferId
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransferHistory/$(request.resource.data.lastHistoryId)
+          ).data.action == 'requested'
+          && getAfter(
+            /databases/$(database)/documents/collectiblePlushes/$(request.resource.data.collectibleCode)
+          ).data.claimedBy == request.auth.uid
+          && getAfter(
+            /databases/$(database)/documents/collectiblePlushes/$(request.resource.data.collectibleCode)
+          ).data.pendingTransferId == transferId
+          && getAfter(
+            /databases/$(database)/documents/plushAuthenticity/$(request.resource.data.collectibleCode)
+          ).data.status == 'adopted'
+          && getAfter(
+            /databases/$(database)/documents/plushCertificates/$(request.resource.data.collectibleCode)
+          ).data.ownerUid == request.auth.uid;
+
+      allow update: if request.auth != null
+          && request.auth.token.firebase.sign_in_provider != 'anonymous'
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'respondedAt', 'lastHistoryId'])
+          && request.resource.data.respondedAt == request.time
+          && request.resource.data.lastHistoryId is string
+          && existsAfter(
+            /databases/$(database)/documents/plushOwnershipTransferHistory/$(request.resource.data.lastHistoryId)
+          )
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransferHistory/$(request.resource.data.lastHistoryId)
+          ).data.transferId == transferId
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransferHistory/$(request.resource.data.lastHistoryId)
+          ).data.actorUid == request.auth.uid
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransferHistory/$(request.resource.data.lastHistoryId)
+          ).data.action == request.resource.data.status
+          && (
+            request.auth.uid == resource.data.toUid
+              && request.resource.data.status in ['accepted', 'rejected']
+              && getAfter(
+                /databases/$(database)/documents/collectiblePlushes/$(resource.data.collectibleCode)
+              ).data.code == resource.data.collectibleCode
+              && !('pendingTransferId' in getAfter(
+                /databases/$(database)/documents/collectiblePlushes/$(resource.data.collectibleCode)
+              ).data)
+              && (
+                request.resource.data.status == 'accepted'
+                  && getAfter(
+                    /databases/$(database)/documents/collectiblePlushes/$(resource.data.collectibleCode)
+                  ).data.claimedBy == request.auth.uid
+                  && getAfter(
+                    /databases/$(database)/documents/plushCertificates/$(resource.data.collectibleCode)
+                  ).data.ownerUid == request.auth.uid
+                || request.resource.data.status == 'rejected'
+                  && getAfter(
+                    /databases/$(database)/documents/collectiblePlushes/$(resource.data.collectibleCode)
+                  ).data.claimedBy == resource.data.fromUid
+              )
+            || request.auth.uid == resource.data.fromUid
+              && request.resource.data.status == 'cancelled'
+              && getAfter(
+                /databases/$(database)/documents/collectiblePlushes/$(resource.data.collectibleCode)
+              ).data.claimedBy == resource.data.fromUid
+              && getAfter(
+                /databases/$(database)/documents/collectiblePlushes/$(resource.data.collectibleCode)
+              ).data.code == resource.data.collectibleCode
+              && !('pendingTransferId' in getAfter(
+                /databases/$(database)/documents/collectiblePlushes/$(resource.data.collectibleCode)
+              ).data)
+          )
+          && getAfter(
+            /databases/$(database)/documents/collectiblePlushes/$(resource.data.collectibleCode)
+          ).data.code == resource.data.collectibleCode;
+
+      allow delete: if false;
+    }
+
+    match /plushOwnershipTransferHistory/{historyId} {
+      allow get, list: if request.auth != null
+          && (
+            resource.data.fromUid == request.auth.uid
+            || resource.data.toUid == request.auth.uid
+            || isVerifiedStaff()
+            || isAdmin()
+          );
+
+      allow create: if request.auth != null
+          && request.resource.data.keys().hasOnly([
+            'transferId', 'collectibleCode', 'action', 'actorUid',
+            'fromUid', 'toUid', 'createdAt'
+          ])
+          && request.resource.data.transferId is string
+          && request.resource.data.collectibleCode.matches(
+            '^CW-(PLUSH-00[1-9]|CUP-00[7-9])-[0-9]{4}$'
+          )
+          && request.resource.data.actorUid == request.auth.uid
+          && request.resource.data.fromUid is string
+          && request.resource.data.toUid is string
+          && request.resource.data.fromUid != request.resource.data.toUid
+          && createdAtMatchesRequestTime()
+          && existsAfter(
+            /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
+          )
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
+          ).data.collectibleCode == request.resource.data.collectibleCode
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
+          ).data.fromUid == request.resource.data.fromUid
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
+          ).data.toUid == request.resource.data.toUid
+          && getAfter(
+            /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
+          ).data.lastHistoryId == historyId
+          && (
+            request.resource.data.action == 'requested'
+              && request.resource.data.actorUid == request.resource.data.fromUid
+              && getAfter(
+                /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
+              ).data.status == 'pending'
+            || request.resource.data.action == 'accepted'
+              && request.resource.data.actorUid == request.resource.data.toUid
+              && getAfter(
+                /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
+              ).data.status == 'accepted'
+            || request.resource.data.action == 'rejected'
+              && request.resource.data.actorUid == request.resource.data.toUid
+              && getAfter(
+                /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
+              ).data.status == 'rejected'
+            || request.resource.data.action == 'cancelled'
+              && request.resource.data.actorUid == request.resource.data.fromUid
+              && getAfter(
+                /databases/$(database)/documents/plushOwnershipTransfers/$(request.resource.data.transferId)
+              ).data.status == 'cancelled'
+          );
+
+      allow update, delete: if false;
+    }
+
+    match /diamondBalances/{userId} {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list, create, update, delete: if false;
+    }
+
+    match /wallets/{userId} {
+      allow get: if request.auth != null
+        && (
+          request.auth.uid == userId
+          || isAdmin()
+        );
+      allow list: if false;
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'ownerUid', 'balance', 'updatedAt', 'lastTransactionId'
+        ])
+        && request.resource.data.ownerUid == userId
+        && request.resource.data.balance is number
+        && request.resource.data.balance >= 0
+        && updatedAtMatchesRequestTime()
+        && request.resource.data.lastTransactionId is string
+        && validGiftCardWalletCredit(
+          userId,
+          request.resource.data.lastTransactionId,
+          getAfter(
+            walletTransactionPath(request.resource.data.lastTransactionId)
+          ).data.giftCardCode
+        );
+
+      allow update: if request.auth != null
+        && resource.data.ownerUid == userId
+        && request.resource.data.ownerUid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'balance', 'updatedAt', 'lastTransactionId'
+        ])
+        && request.resource.data.balance is number
+        && request.resource.data.balance >= 0
+        && updatedAtMatchesRequestTime()
+        && request.resource.data.lastTransactionId is string
+        && (
+          validGiftCardWalletCredit(
+            userId,
+            request.resource.data.lastTransactionId,
+            getAfter(
+              walletTransactionPath(request.resource.data.lastTransactionId)
+            ).data.giftCardCode
+          )
+          || isVerifiedStaff()
+            && validPosWalletDebit(
+              userId,
+              request.resource.data.lastTransactionId,
+              request.resource.data.lastTransactionId
+            )
+        );
+
+      allow delete: if false;
+    }
+
+    match /walletTransactions/{transactionId} {
+      allow get: if request.auth != null
+        && (
+          isAdmin()
+          || resource.data.ownerUid == request.auth.uid
+        );
+      allow list: if isAdmin()
+        || (
+          request.auth != null
+          && resource.data.ownerUid == request.auth.uid
+        );
+
+      allow create: if request.resource.data.keys().hasOnly([
+          'ownerUid', 'type', 'direction', 'amount', 'balanceBefore',
+          'balanceAfter', 'giftCardCode', 'saleId', 'employeeUid', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'ownerUid', 'type', 'direction', 'amount', 'createdAt'
+        ])
+        && request.resource.data.ownerUid is string
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && createdAtMatchesRequestTime()
+        && (
+          request.resource.data.type == 'giftCardRedemption'
+            && request.auth != null
+            && request.auth.uid == request.resource.data.ownerUid
+            && request.resource.data.direction == 'credit'
+            && request.resource.data.giftCardCode is string
+            && request.resource.data.balanceBefore is number
+            && request.resource.data.balanceBefore >= 0
+            && request.resource.data.balanceAfter is number
+            && !('saleId' in request.resource.data)
+            && !('employeeUid' in request.resource.data)
+            && validGiftCardWalletCredit(
+              request.resource.data.ownerUid,
+              transactionId,
+              request.resource.data.giftCardCode
+            )
+          || request.resource.data.type == 'posDebit'
+            && isVerifiedStaff()
+            && request.resource.data.direction == 'debit'
+            && request.resource.data.saleId == transactionId
+            && request.resource.data.employeeUid == request.auth.uid
+            && !('balanceBefore' in request.resource.data)
+            && !('balanceAfter' in request.resource.data)
+            && !('giftCardCode' in request.resource.data)
+            && validPosWalletDebit(
+              request.resource.data.ownerUid,
+              transactionId,
+              request.resource.data.saleId
+            )
+        );
+
+      allow update, delete: if false;
+    }
+
+    match /diamondLedger/{entryId} {
+      allow read, write: if false;
+    }
+
+    match /plushUnitHistory/{historyId} {
+      allow get, list: if isVerifiedStaff();
+
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'code', 'modelCode', 'action', 'employeeUid',
+          'employeeEmail', 'ownerUid', 'createdAt', 'saleId'
+        ])
+        && request.resource.data.code.matches(
+          '^CW-(PLUSH-00[1-9]|CUP-00[7-9])-[0-9]{4}$'
+        )
+        && request.resource.data.action in ['registered', 'adopted']
+        && request.resource.data.employeeUid == request.auth.uid
+        && createdAtMatchesRequestTime()
+        && (
+          request.resource.data.action == 'registered'
+            && getAfter(
+              /databases/$(database)/documents/collectiblePlushes/$(request.resource.data.code)
+            ).data.createdBy == request.auth.uid
+          || request.resource.data.action == 'adopted'
+            && getAfter(
+              /databases/$(database)/documents/plushAdoptions/$(request.resource.data.code)
+            ).data.employeeUid == request.auth.uid
+        );
+
+      allow update, delete: if false;
+    }
+
+    match /giftCards/{code} {
+      allow get: if isVerifiedStaff()
+        || (request.auth != null && resource.data.status == 'active');
+      allow list: if isVerifiedStaff();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'code', 'initialBalance', 'balance', 'status', 'createdBy',
+          'createdByEmail', 'createdAt', 'redeemedBy', 'redeemedAt',
+          'lastRedemptionId',
+        ])
+        && request.resource.data.code == code
+        && code.matches('^WOLF-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$')
+        && request.resource.data.initialBalance is number
+        && request.resource.data.initialBalance > 0
+        && request.resource.data.balance == request.resource.data.initialBalance
+        && request.resource.data.status == 'active'
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdByEmail == request.auth.token.email
+        && createdAtMatchesRequestTime()
+        && request.resource.data.redeemedBy == null
+        && request.resource.data.redeemedAt == null;
+
+      allow update: if request.auth != null
+        && resource.data.status == 'active'
+        && request.resource.data.status == 'redeemed'
+        && request.resource.data.balance == 0
+        && request.resource.data.redeemedBy == request.auth.uid
+        && request.resource.data.redeemedAt == request.time
+        && request.resource.data.lastRedemptionId is string
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'balance', 'status', 'redeemedBy', 'redeemedAt',
+          'lastRedemptionId'
+        ])
+        && validGiftCardWalletCredit(
+          request.auth.uid,
+          request.resource.data.lastRedemptionId,
+          code
+        );
+
+      allow delete: if false;
+    }
+
+    match /rewardRedemptions/{redemptionId} {
+      allow create: if isVerifiedStaff()
+        && request.resource.data.keys().hasOnly([
+          'customerUid', 'employeeUid', 'employeeEmail',
+          'rewardType', 'rewardId', 'figureId', 'redeemedAt',
+          'distanceMeters', 'status'
+        ])
+        && request.resource.data.keys().hasAll([
+          'customerUid', 'employeeUid', 'employeeEmail',
+          'rewardType', 'rewardId', 'redeemedAt'
+        ])
+        && request.resource.data.customerUid is string
+        && request.resource.data.customerUid.size() > 0
+        && exists(
+          /databases/$(database)/documents/users/$(request.resource.data.customerUid)
+        )
+        && request.resource.data.employeeUid == request.auth.uid
+        && request.resource.data.employeeEmail == request.auth.token.email
+        && request.resource.data.rewardId is string
+        && request.resource.data.rewardId.size() > 0
+        && request.resource.data.redeemedAt == request.time
+        && (
+          request.resource.data.rewardType == 'coldBrewStamp'
+            && redemptionId == request.resource.data.rewardId
+            && request.resource.data.status == 'delivered'
+            && request.resource.data.figureId in coldBrewFigureIds()
+            && request.resource.data.distanceMeters is number
+            && request.resource.data.distanceMeters >= 0
+            && request.resource.data.distanceMeters <= 50
+            && getAfter(
+              /databases/$(database)/documents/coldBrewAlbums/$(request.resource.data.customerUid)
+            ).data.lastRedemptionId == redemptionId
+        );
+
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /wolvesMatchParticipants/{userId} {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && matchAccountEligible()
+        && validMatchProfileFields(request.resource.data)
+        && request.resource.data.status in ['configuring', 'active']
+        && existsAfter(matchPublicIdAt(request.resource.data.matchPublicId))
+        && getAfter(matchPublicIdAt(request.resource.data.matchPublicId)).data.uid
+          == request.auth.uid
+        && createdAtMatchesRequestTime();
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        && matchAccountEligible()
+        && validMatchProfileFields(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.matchPublicId == resource.data.matchPublicId
+        && matchProfileOwnedByCurrentUser(resource.data.matchPublicId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'consentAt', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /wolvesMatchPublicIds/{publicId} {
+      allow get: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+      allow list: if false;
+      allow create: if matchAccountEligible()
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && existsAfter(ownMatchParticipantPath())
+        && getAfter(ownMatchParticipantPath()).data.matchPublicId == publicId;
+      allow update, delete: if false;
+    }
+
+    match /wolvesMatchPublicProfiles/{publicId} {
+      allow get: if matchAccountEligible()
+        && (
+          ownsMatchPublicId(publicId)
+          ||
+          resource.data.status == 'active'
+          || exists(ownMatchParticipantPath())
+            && matchPairExists(ownMatchPublicId(), publicId)
+        );
+      allow list: if matchAccountEligible()
+        && resource.data.status == 'active';
+      allow create, update: if matchAccountEligible()
+        && validMatchPublicId(publicId)
+        && request.resource.data.keys().hasOnly([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'displayName', 'bio', 'intention', 'interests', 'status',
+          'updatedAt'
+        ])
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() >= 2
+        && request.resource.data.displayName.size() <= 40
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 180
+        && !matchTextContainsPrivateContact(
+          request.resource.data.displayName + '\n' + request.resource.data.bio
+        )
+        && validMatchIntention(request.resource.data.intention)
+        && request.resource.data.interests is list
+        && request.resource.data.interests.size() <= 5
+        && request.resource.data.interests.toSet().hasOnly([
+          'Café de especialidad', 'Eventos', 'Música', 'Lectura',
+          'Naturaleza', 'Mascotas', 'Arte', 'Viajes',
+          'Conversaciones', 'Deportes'
+        ])
+        && request.resource.data.status in [
+          'configuring', 'active', 'paused', 'left'
+        ]
+        && updatedAtMatchesRequestTime()
+        && existsAfter(matchPublicIdAt(publicId))
+        && getAfter(matchPublicIdAt(publicId)).data.uid == request.auth.uid
+        && existsAfter(ownMatchParticipantPath())
+        && getAfter(ownMatchParticipantPath()).data.matchPublicId == publicId
+        && getAfter(ownMatchParticipantPath()).data.status
+          == request.resource.data.status
+        && getAfter(ownMatchParticipantPath()).data.displayName
+          == request.resource.data.displayName
+        && getAfter(ownMatchParticipantPath()).data.bio
+          == request.resource.data.bio
+        && getAfter(ownMatchParticipantPath()).data.intention
+          == request.resource.data.intention
+        && getAfter(ownMatchParticipantPath()).data.interests
+          == request.resource.data.interests;
+      allow delete: if false;
+    }
+
+    match /wolvesMatchPairs/{pairId} {
+      allow get: if exists(
+          /databases/$(database)/documents/wolvesMatchPairs/$(pairId)
+        )
+          && readableMatchPair(resource.data)
+        || canGetMissingMatchPair(pairId);
+      allow list: if false;
+      allow create: if canCreateMatchPair(request.resource.data, pairId);
+      allow update: if canUpdateMatchPair(request.resource.data, pairId);
+      allow delete: if false;
+    }
+
+    match /wolvesMatchUsers/{publicId}/pairs/{pairId} {
+      function pairPath() {
+        return /databases/$(database)/documents/wolvesMatchPairs/$(pairId);
+      }
+
+      function validPairView(data, sourcePair) {
+        return sourcePair.publicIds is list
+          && sourcePair.publicIds.size() == 2
+          && publicId in sourcePair.publicIds
+          && data.keys().hasOnly([
+            'peerPublicId', 'status', 'interestFromPublicId', 'updatedAt'
+          ])
+          && data.keys().hasAll([
+            'peerPublicId', 'status', 'interestFromPublicId', 'updatedAt'
+          ])
+          && validMatchPublicId(data.peerPublicId)
+          && data.peerPublicId != publicId
+          && data.peerPublicId in sourcePair.publicIds
+          && data.status == sourcePair.status
+          && data.interestFromPublicId == sourcePair.interestFromPublicId
+          && data.updatedAt == request.time
+          && sourcePair.decidedByPublicId == ownMatchPublicId()
+          && sourcePair.updatedAt == request.time;
+      }
+
+      allow get, list: if ownsMatchPublicId(publicId);
+      allow create, update: if matchAccountEligible()
+        && exists(ownMatchParticipantPath())
+        && get(ownMatchParticipantPath()).data.status == 'active'
+        && existsAfter(pairPath())
+        && ownMatchPublicId()
+          in getAfter(pairPath()).data.publicIds
+        && validPairView(
+          request.resource.data,
+          getAfter(pairPath()).data
+        );
+      allow delete: if false;
+    }
+
+    match /wolvesMatchBlocks/{userId}/users/{blockedUserId} {
+      allow get: if matchAccountEligible()
+        && (
+          ownsMatchPublicId(userId)
+          || ownsMatchPublicId(blockedUserId)
+        );
+      allow list: if false;
+      allow create: if ownsMatchPublicId(userId)
+        && matchAccountEligible()
+        && validMatchPublicId(blockedUserId)
+        && request.resource.data.keys().hasOnly(['createdAt'])
+        && createdAtMatchesRequestTime();
+      allow update, delete: if false;
+    }
+
+    match /wolvesMatchReports/{reportId} {
+      allow create: if matchAccountEligible()
+        && request.resource.data.keys().hasOnly([
+          'reporterUid', 'targetPublicId', 'reason', 'details',
+          'status', 'createdAt'
+        ])
+        && request.resource.data.reporterUid == request.auth.uid
+        && validMatchPublicId(request.resource.data.targetPublicId)
+        && activeMatchProfile(request.resource.data.targetPublicId)
+        && request.resource.data.reason in [
+          'inappropriate', 'fake', 'harassment', 'other'
+        ]
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 500
+        && request.resource.data.status == 'open'
+        && createdAtMatchesRequestTime();
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /wolvesMatchIcebreakers/{pairId}/answers/{answerId} {
+      function icebreakerPairPath() {
+        return /databases/$(database)/documents/wolvesMatchPairs/$(pairId);
+      }
+
+      function icebreakerPairIsActive() {
+        return matchAccountEligible()
+          && exists(ownMatchParticipantPath())
+          && get(ownMatchParticipantPath()).data.status == 'active'
+          && exists(icebreakerPairPath())
+          && get(icebreakerPairPath()).data.status == 'mutual'
+          && get(icebreakerPairPath()).data.publicIds is list
+          && get(icebreakerPairPath()).data.publicIds.size() == 2
+          && pairId == get(icebreakerPairPath()).data.publicIds[0]
+            + '__' + get(icebreakerPairPath()).data.publicIds[1]
+          && ownMatchPublicId() in get(icebreakerPairPath()).data.publicIds
+          && compatibleActiveMatchPair(
+            get(icebreakerPairPath()).data.publicIds[0],
+            get(icebreakerPairPath()).data.publicIds[1]
+          );
+      }
+
+      function validIcebreakerAnswer(data) {
+        return data.keys().hasOnly([
+            'questionId', 'publicId', 'answerIndex', 'createdAt'
+          ])
+          && data.keys().hasAll([
+            'questionId', 'publicId', 'answerIndex', 'createdAt'
+          ])
+          && data.questionId.matches('^q[0-4]$')
+          && data.publicId in get(icebreakerPairPath()).data.publicIds
+          && data.answerIndex is int
+          && data.answerIndex >= 0
+          && data.answerIndex <= 3
+          && data.createdAt is timestamp;
+      }
+
+      function canReadIcebreakerAnswer() {
+        let ownAnswerId =
+          resource.data.questionId + '__' + ownMatchPublicId();
+        return icebreakerPairIsActive()
+          && validIcebreakerAnswer(resource.data)
+          && answerId
+            == resource.data.questionId + '__' + resource.data.publicId
+          && (
+            resource.data.publicId == ownMatchPublicId()
+            || (
+              exists(
+                /databases/$(database)/documents/wolvesMatchIcebreakers/$(pairId)/answers/$(ownAnswerId)
+              )
+              && exists(
+                /databases/$(database)/documents/wolvesMatchIcebreakers/$(pairId)/answers/$(answerId)
+              )
+            )
+          );
+      }
+
+      function isOwnIcebreakerAnswerId() {
+        return answerId in [
+          'q0__' + ownMatchPublicId(),
+          'q1__' + ownMatchPublicId(),
+          'q2__' + ownMatchPublicId(),
+          'q3__' + ownMatchPublicId(),
+          'q4__' + ownMatchPublicId()
+        ];
+      }
+
+      allow get: if icebreakerPairIsActive()
+          && (
+            !exists(
+              /databases/$(database)/documents/wolvesMatchIcebreakers/$(pairId)/answers/$(answerId)
+            )
+            && isOwnIcebreakerAnswerId()
+            || canReadIcebreakerAnswer()
+          );
+      allow list: if false;
+      allow create: if icebreakerPairIsActive()
+          && validIcebreakerAnswer(request.resource.data)
+          && createdAtMatchesRequestTime()
+          && request.resource.data.publicId == ownMatchPublicId()
+        && answerId
+          == request.resource.data.questionId + '__' + ownMatchPublicId();
+      allow update, delete: if false;
+    }
+
+    match /game_sessions/{sessionId} {
+      allow get: if request.auth != null
+        && resource.data.participants is list
+        && request.auth.uid in resource.data.participants;
+      allow list, create, update, delete: if false;
+
+      match /privateAnswers/{userId} {
+        allow get: if request.auth != null
+          && request.auth.uid == userId
+          && exists(
+            /databases/$(database)/documents/game_sessions/$(sessionId)
+          )
+          && request.auth.uid in get(
+            /databases/$(database)/documents/game_sessions/$(sessionId)
+          ).data.participants;
+        allow list, create, update, delete: if false;
+      }
     }
   }
 }
