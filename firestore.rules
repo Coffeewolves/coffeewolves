@@ -64,8 +64,10 @@ service cloud.firestore {
 
     function hasManagementOrStaff() {
       return request.auth != null
-        && (exists(/databases/$(database)/documents/management/$(request.auth.uid))
-          || exists(/databases/$(database)/documents/pos_staff/$(request.auth.uid)));
+        && (
+          exists(/databases/$(database)/documents/management/$(request.auth.uid))
+          || exists(/databases/$(database)/documents/pos_staff/$(request.auth.uid))
+        );
     }
 
     function databaseRole() {
