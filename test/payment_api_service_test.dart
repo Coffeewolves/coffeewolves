@@ -58,4 +58,45 @@ void main() {
       );
     });
   });
+
+  group('PaymentOrderStatus', () {
+    test('validates the backend order ID, amount, and paid status', () {
+      final payment = PaymentOrderStatus.fromJson(
+        {
+          'orderId': 'order-123',
+          'amount': 180,
+          'status': 'exitoso',
+        },
+        expectedOrderId: 'order-123',
+      );
+
+      expect(payment.id, 'order-123');
+      expect(payment.amount, 180);
+      expect(payment.status, 'paid');
+    });
+
+    test('rejects a missing amount or an unrelated order ID', () {
+      expect(
+        () => PaymentOrderStatus.fromJson(
+          {
+            'orderId': 'order-123',
+            'status': 'paid',
+          },
+          expectedOrderId: 'order-123',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => PaymentOrderStatus.fromJson(
+          {
+            'orderId': 'other-order',
+            'amount': 180,
+            'status': 'paid',
+          },
+          expectedOrderId: 'order-123',
+        ),
+        throwsFormatException,
+      );
+    });
+  });
 }

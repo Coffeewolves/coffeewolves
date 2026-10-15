@@ -57,6 +57,42 @@ class PaymentOrder {
   }
 }
 
+class PaymentOrderStatus {
+  const PaymentOrderStatus({
+    required this.id,
+    required this.amount,
+    required this.status,
+  });
+
+  final String id;
+  final double amount;
+  final String status;
+
+  factory PaymentOrderStatus.fromJson(
+    Map<String, dynamic> json, {
+    required String expectedOrderId,
+  }) {
+    final id = json['orderId'];
+    final amount = json['amount'];
+    final status = _normalizePaymentStatus(json['status']);
+    if (id is! String ||
+        id != expectedOrderId ||
+        amount is! num ||
+        !amount.toDouble().isFinite ||
+        amount <= 0 ||
+        status == null) {
+      throw const FormatException(
+        'La pasarela no devolvió un importe verificable para la orden.',
+      );
+    }
+    return PaymentOrderStatus(
+      id: id,
+      amount: amount.toDouble(),
+      status: status,
+    );
+  }
+}
+
 String? _normalizePaymentStatus(Object? value) {
   if (value is! String) return null;
   return switch (value.trim().toLowerCase()) {
@@ -137,6 +173,25 @@ class PaymentApiService {
       throw const FormatException('Estado de pago no válido.');
     }
     return status;
+  }
+
+  Future<PaymentOrderStatus> getOrderPaymentStatus(String orderId) async {
+    final response = await _client
+        .get(
+          _endpoint('orders/${Uri.encodeComponent(orderId)}'),
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode != 200) {
+      throw PaymentApiException(
+        'No se pudo verificar el importe del pago (HTTP ${response.statusCode}).',
+      );
+    }
+    final json = _decodeObject(response.body);
+    return PaymentOrderStatus.fromJson(
+      json,
+      expectedOrderId: orderId,
+    );
   }
 
   void close() => _client.close();

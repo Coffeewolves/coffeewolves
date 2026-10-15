@@ -222,13 +222,37 @@ class BusinessOperationsService {
     Map<String, int> trackedShopProducts = const {},
     Map<String, Map<String, int>> trackedShopVariants = const {},
     String? customerUid,
+    String? memberCardBuyerLookup,
     int? tableNumber,
   }) async {
     final key = dateKey(date);
     if (saleId != null && (saleId.isEmpty || saleId.contains('/'))) {
       throw ArgumentError.value(saleId, 'saleId', 'Debe ser un ID válido.');
     }
+    final memberCardLines = items
+        .where((item) => item['productId'] == 'wolves-member-card')
+        .toList(growable: false);
+    if (memberCardLines.isNotEmpty &&
+        (memberCardBuyerLookup == null ||
+            memberCardBuyerLookup.trim().length < 3 ||
+            items.length != 1 ||
+            memberCardLines.length != 1 ||
+            memberCardLines.first['name'] != 'Wolves Member Card' ||
+            paymentMethod == 'wallet')) {
+      throw ArgumentError(
+        'La venta de Member Card debe cobrarse sola y registrar el correo o username del comprador.',
+      );
+    }
+    if (memberCardBuyerLookup != null && memberCardLines.length != 1) {
+      throw ArgumentError(
+          'La venta de Member Card no coincide con su solicitud.');
+    }
     final saleRef = _firestore.collection('cafeSales').doc(saleId);
+    final memberCardRequestRef = memberCardBuyerLookup == null
+        ? null
+        : _firestore.collection('memberCardRequests').doc(saleRef.id);
+    final memberCardSettingsRef =
+        _firestore.collection('memberCardSettings').doc('current');
     final walletRef = paymentMethod == 'wallet' && customerUid != null
         ? _firestore.collection('wallets').doc(customerUid)
         : null;
@@ -263,6 +287,12 @@ class BusinessOperationsService {
         final attendance = await transaction.get(attendanceRef);
         final assignment = await transaction.get(assignmentRef);
         final session = await transaction.get(sessionRef);
+        final memberCardRequestSnapshot = memberCardRequestRef == null
+            ? null
+            : await transaction.get(memberCardRequestRef);
+        final memberCardSettingsSnapshot = memberCardRequestRef == null
+            ? null
+            : await transaction.get(memberCardSettingsRef);
         final inventorySnapshots =
             <String, DocumentSnapshot<Map<String, dynamic>>>{};
         final shopInventorySnapshots =
@@ -283,6 +313,11 @@ class BusinessOperationsService {
         }
         if (!session.exists || session.data()?['status'] != 'open') {
           return 'Abre la caja antes de registrar ventas.';
+        }
+        if (memberCardRequestRef != null &&
+            (memberCardRequestSnapshot!.exists ||
+                memberCardSettingsSnapshot?.data()?['price'] != total)) {
+          return 'La solicitud de Member Card ya existe o el precio cambió; actualiza el importe antes de cobrar.';
         }
         if (paymentMethod == 'wallet') {
           if (customerUid == null || customerUid.isEmpty || walletRef == null) {
@@ -423,8 +458,26 @@ class BusinessOperationsService {
             'walletTransactionId': walletTransactionRef.id,
           if (customerUid != null && customerUid.isNotEmpty)
             'customerUid': customerUid,
+          if (memberCardBuyerLookup != null &&
+              memberCardBuyerLookup.trim().isNotEmpty)
+            'memberCardBuyerLookup': memberCardBuyerLookup.trim(),
           'paidAt': FieldValue.serverTimestamp(),
         });
+        if (memberCardRequestRef != null && memberCardBuyerLookup != null) {
+          transaction.set(memberCardRequestRef, {
+            'fullName': memberCardBuyerLookup.trim(),
+            'buyerLookup': memberCardBuyerLookup.trim(),
+            'source': 'pos',
+            'status': 'payment_confirmed',
+            'amount': total,
+            'saleId': saleRef.id,
+            'createdBy': employeeUid,
+            'deliveryDueAt': Timestamp.fromDate(
+              date.add(const Duration(days: 7)),
+            ),
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
 
         if (cafeItems.isNotEmpty) {
           final kitchenItems = cafeItems.map((item) {

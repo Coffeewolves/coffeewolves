@@ -51,17 +51,6 @@ service cloud.firestore {
       return /databases/$(database)/documents/cafeSales/$(saleId);
     }
 
-    function validMemberCardFields(data) {
-      return data.keys().hasOnly([
-          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
-          'sequence', 'createdBy', 'createdAt'
-        ])
-        && data.keys().hasAll([
-          'fullName', 'phone', 'nationalId', 'email', 'memberCardNumber',
-          'sequence', 'createdBy', 'createdAt'
-        ]);
-    }
-
     function hasManagementOrStaff() {
       return request.auth != null
         && (
@@ -444,6 +433,66 @@ service cloud.firestore {
         && audit.redeemedAt == request.time;
     }
 
+    function validRewardQrRedemption(tokenId, customerUid, rewardType, rewardId) {
+      let tokenPath =
+        /databases/$(database)/documents/rewardQrTokens/$(tokenId);
+      let auditPath =
+        /databases/$(database)/documents/rewardRedemptions/$(tokenId);
+      let token = getAfter(tokenPath).data;
+      let audit = getAfter(auditPath).data;
+      return tokenId.matches(
+          '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        )
+        && existsAfter(tokenPath)
+        && existsAfter(auditPath)
+        && token.status == 'redeemed'
+        && token.redeemedBy == customerUid
+        && token.redeemedAt == request.time
+        && token.rewardType == rewardType
+        && token.rewardId == rewardId
+        && audit.customerUid == customerUid
+        && audit.receiverUid == customerUid
+        && audit.employeeUid == token.issuerUid
+        && audit.employeeEmail == token.issuerEmail
+        && audit.issuerUid == token.issuerUid
+        && audit.issuerEmail == token.issuerEmail
+        && audit.rewardType == rewardType
+        && audit.rewardId == tokenId
+        && audit.redeemedAt == request.time
+        && audit.status == 'delivered'
+        && (
+          request.auth != null
+            && request.auth.uid == customerUid
+            && request.auth.token.email_verified == true
+            && request.auth.token.firebase.sign_in_provider != 'anonymous'
+          || isVerifiedStaff()
+            && request.auth.uid == token.issuerUid
+            && hasActiveMemberCard(customerUid)
+        );
+    }
+
+    function validRewardQrPassportStamp(stampId, customerUid, methodName) {
+      let stampPath =
+        /databases/$(database)/documents/passportMethodStamps/$(stampId);
+      let stamp = getAfter(stampPath).data;
+      return existsAfter(stampPath)
+        && stamp.customerUid == customerUid
+        && stamp.methodName == methodName
+        && stamp.stampedAt == request.time
+        && validRewardQrRedemption(
+          stampId,
+          customerUid,
+          'passportMethod',
+          methodName
+        )
+        && stamp.employeeUid == getAfter(
+          /databases/$(database)/documents/rewardQrTokens/$(stampId)
+        ).data.issuerUid
+        && stamp.employeeEmail == getAfter(
+          /databases/$(database)/documents/rewardQrTokens/$(stampId)
+        ).data.issuerEmail;
+    }
+
     function coldBrewFigureIds() {
       return [
         'classic', 'orange', 'nitro', 'wolves_milk', 'orange_milk',
@@ -487,84 +536,49 @@ service cloud.firestore {
         && stamp.stampedAt == request.time;
     }
 
-    function memberCardLookupMatches(userId, sequence) {
-      let memberCard = getAfter(
-        /databases/$(database)/documents/memberCards/$(userId)
-      ).data;
-      let lookup = getAfter(
-        /databases/$(database)/documents/memberCardLookups/$(memberCard.cardNumber)
-      ).data;
-      return memberCard.sequence == sequence
-        && lookup.userUid == userId
-        && lookup.cardNumber == memberCard.cardNumber
-        && lookup.sequence == sequence;
-    }
-
     function hasActiveMemberCard(userId) {
       let cardPath =
-        /databases/$(database)/documents/memberCards/$(userId);
+        /databases/$(database)/documents/wolves_member_card/$(userId);
       return exists(cardPath)
         && get(cardPath).data.userUid == userId
-        && get(cardPath).data.cardNumber is string
-        && get(cardPath).data.cardNumber.matches('^CW-[0-9]{6}$')
+        && get(cardPath).data.memberCardNumber is string
+        && get(cardPath).data.memberCardNumber.matches('^WLV-M-[0-9]{6}$')
+        && get(cardPath).data.status == 'active'
         && exists(
-          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.cardNumber)
+          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.memberCardNumber)
         )
         && get(
-          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.cardNumber)
+          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.memberCardNumber)
         ).data.userUid == userId
         && get(
-          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.cardNumber)
-        ).data.cardNumber == get(cardPath).data.cardNumber
+          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.memberCardNumber)
+        ).data.cardNumber == get(cardPath).data.memberCardNumber
         && get(
-          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.cardNumber)
+          /databases/$(database)/documents/memberCardLookups/$(get(cardPath).data.memberCardNumber)
         ).data.sequence == get(cardPath).data.sequence;
     }
 
-    function memberCardHolderMatches(holderId, cardNumber, sequence, createdBy) {
-      return (
-        existsAfter(
-          /databases/$(database)/documents/customers/$(holderId)
-        )
-        && getAfter(
-          /databases/$(database)/documents/customers/$(holderId)
-        ).data.memberCardNumber == cardNumber
-        && getAfter(
-          /databases/$(database)/documents/customers/$(holderId)
-        ).data.sequence == sequence
-        && getAfter(
-          /databases/$(database)/documents/customers/$(holderId)
-        ).data.createdBy == createdBy
-      ) || (
-        existsAfter(
-          /databases/$(database)/documents/member_cards/$(holderId)
-        )
-        && getAfter(
-          /databases/$(database)/documents/member_cards/$(holderId)
-        ).data.memberCardNumber == cardNumber
-        && getAfter(
-          /databases/$(database)/documents/member_cards/$(holderId)
-        ).data.sequence == sequence
-        && getAfter(
-          /databases/$(database)/documents/member_cards/$(holderId)
-        ).data.createdBy == createdBy
-      );
-    }
-
-    function memberCardHolderLookupMatches(cardNumber, sequence) {
+    function paidMemberCardLookupMatches(cardNumber, sequence) {
       let lookup = getAfter(
-        /databases/$(database)/documents/customerMemberCardLookups/$(cardNumber)
+        /databases/$(database)/documents/memberCardLookups/$(cardNumber)
       ).data;
-      let holderId = lookup.get('holderId', lookup.get('customerId', ''));
+      let card = getAfter(
+        /databases/$(database)/documents/wolves_member_card/$(lookup.userUid)
+      ).data;
       return lookup.cardNumber == cardNumber
         && lookup.sequence == sequence
-        && lookup.createdBy == request.auth.uid
-        && memberCardHolderMatches(
-          holderId,
-          cardNumber,
-          sequence,
-          request.auth.uid
-        );
+        && card.userUid == lookup.userUid
+        && card.memberCardNumber == cardNumber
+        && card.sequence == sequence
+        && card.status == 'active';
+    }
+
+    function nextPaidMemberCardSequence() {
+      let legacyCounterPath =
+        /databases/$(database)/documents/customerMemberCardCounters/current;
+      return exists(legacyCounterPath)
+        ? get(legacyCounterPath).data.lastSequence + 1
+        : 1;
     }
 
     function validCollectibleModel(modelCode, character) {
@@ -1995,76 +2009,294 @@ service cloud.firestore {
       allow get: if request.auth != null
         && (request.auth.uid == userId || isVerifiedStaff());
       allow list: if isAdmin();
+      allow create, update, delete: if false;
+    }
 
-      allow create: if request.auth != null
-        && request.auth.uid == userId
+    match /wolves_member_card/{userId} {
+      allow get: if request.auth != null
+        && (request.auth.uid == userId || isVerifiedStaff());
+      allow list: if isAdmin();
+
+      allow create: if isAdmin()
         && request.resource.data.keys().hasOnly([
-          'userUid', 'cardNumber', 'sequence', 'createdAt'
+          'userUid', 'memberCardNumber', 'sequence', 'fullName', 'status',
+          'issuedBy', 'purchaseReference', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'userUid', 'memberCardNumber', 'sequence', 'fullName', 'status',
+          'issuedBy', 'purchaseReference', 'createdAt'
         ])
         && request.resource.data.userUid == userId
-        && request.resource.data.cardNumber is string
-        && request.resource.data.cardNumber.matches('^CW-[0-9]{6}$')
+        && get(
+          /databases/$(database)/documents/users/$(userId)
+        ).data.role == 'user'
+        && request.resource.data.memberCardNumber is string
+        && request.resource.data.memberCardNumber.matches('^WLV-M-[0-9]{6}$')
         && request.resource.data.sequence is int
         && request.resource.data.sequence > 0
+        && request.resource.data.fullName is string
+        && request.resource.data.fullName.size() >= 2
+        && request.resource.data.fullName.size() <= 120
+        && request.resource.data.status == 'active'
+        && request.resource.data.issuedBy == request.auth.uid
+        && request.resource.data.purchaseReference is string
+        && request.resource.data.purchaseReference.size() <= 160
         && createdAtMatchesRequestTime()
         && getAfter(
-          /databases/$(database)/documents/memberCardLookups/$(request.resource.data.cardNumber)
+          /databases/$(database)/documents/memberCardLookups/$(request.resource.data.memberCardNumber)
         ).data.userUid == userId
         && getAfter(
-          /databases/$(database)/documents/memberCardLookups/$(request.resource.data.cardNumber)
+          /databases/$(database)/documents/memberCardLookups/$(request.resource.data.memberCardNumber)
+        ).data.cardNumber == request.resource.data.memberCardNumber
+        && getAfter(
+          /databases/$(database)/documents/memberCardLookups/$(request.resource.data.memberCardNumber)
         ).data.sequence == request.resource.data.sequence
         && getAfter(
-          /databases/$(database)/documents/memberCardCounters/current
-        ).data.lastSequence == request.resource.data.sequence;
+          /databases/$(database)/documents/wolvesMemberCardCounters/current
+        ).data.lastSequence == request.resource.data.sequence
+        && getAfter(
+          /databases/$(database)/documents/wolvesMemberCardCounters/current
+        ).data.lastCardNumber == request.resource.data.memberCardNumber;
 
       allow update, delete: if false;
     }
 
     match /memberCardLookups/{cardNumber} {
-      allow get: if isVerifiedStaff();
+      allow get: if isVerifiedStaff()
+        || request.auth != null && resource.data.userUid == request.auth.uid;
       allow list: if false;
 
-      allow create: if request.auth != null
+      allow create: if isAdmin()
         && request.resource.data.keys().hasOnly([
           'userUid', 'cardNumber', 'sequence', 'createdAt'
         ])
-        && request.resource.data.userUid == request.auth.uid
+        && request.resource.data.userUid is string
         && request.resource.data.cardNumber == cardNumber
-        && cardNumber.matches('^CW-[0-9]{6}$')
+        && cardNumber.matches('^WLV-M-[0-9]{6}$')
         && request.resource.data.sequence is int
         && request.resource.data.sequence > 0
         && createdAtMatchesRequestTime()
         && getAfter(
-          /databases/$(database)/documents/memberCards/$(request.auth.uid)
-        ).data.cardNumber == cardNumber
+          /databases/$(database)/documents/wolves_member_card/$(request.resource.data.userUid)
+        ).data.memberCardNumber == cardNumber
         && getAfter(
-          /databases/$(database)/documents/memberCards/$(request.auth.uid)
+          /databases/$(database)/documents/wolves_member_card/$(request.resource.data.userUid)
         ).data.sequence == request.resource.data.sequence
         && getAfter(
-          /databases/$(database)/documents/memberCardCounters/current
+          /databases/$(database)/documents/wolvesMemberCardCounters/current
         ).data.lastSequence == request.resource.data.sequence;
 
       allow update, delete: if false;
     }
 
     match /memberCardCounters/{counterId} {
-      allow get: if request.auth != null && counterId == 'current';
+      allow get: if isAdmin() && counterId == 'current';
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    match /wolvesMemberCardCounters/{counterId} {
+      allow get: if isAdmin() && counterId == 'current';
       allow list: if false;
 
-      allow create: if request.auth != null
+      allow create: if isAdmin()
         && counterId == 'current'
-        && request.resource.data.keys().hasOnly(['lastSequence'])
-        && request.resource.data.lastSequence == 1
-        && memberCardLookupMatches(request.auth.uid, 1);
+        && request.resource.data.keys().hasOnly([
+          'lastSequence', 'lastCardNumber'
+        ])
+        && request.resource.data.lastCardNumber is string
+        && request.resource.data.lastCardNumber.matches('^WLV-M-[0-9]{6}$')
+        && request.resource.data.lastSequence == nextPaidMemberCardSequence()
+        && paidMemberCardLookupMatches(
+          request.resource.data.lastCardNumber,
+          request.resource.data.lastSequence
+        );
 
-      allow update: if request.auth != null
+      allow update: if isAdmin()
         && counterId == 'current'
-        && request.resource.data.keys().hasOnly(['lastSequence'])
+        && request.resource.data.keys().hasOnly([
+          'lastSequence', 'lastCardNumber'
+        ])
         && resource.data.lastSequence is int
         && request.resource.data.lastSequence == resource.data.lastSequence + 1
-        && memberCardLookupMatches(
-          request.auth.uid,
+        && request.resource.data.lastCardNumber is string
+        && request.resource.data.lastCardNumber.matches('^WLV-M-[0-9]{6}$')
+        && paidMemberCardLookupMatches(
+          request.resource.data.lastCardNumber,
           request.resource.data.lastSequence
+        );
+
+      allow delete: if false;
+    }
+
+    match /memberCardSettings/{settingsId} {
+      allow get: if request.auth != null && settingsId == 'current';
+      allow list: if false;
+      allow create, update: if isAdmin()
+        && settingsId == 'current'
+        && request.resource.data.keys().hasOnly([
+          'price', 'currency', 'updatedBy', 'updatedAt'
+        ])
+        && request.resource.data.price is number
+        && request.resource.data.price > 0
+        && request.resource.data.currency == 'BOB'
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /memberCardRequests/{requestId} {
+      allow get, list: if isAdmin()
+        || request.auth != null
+          && resource.data.get('userUid', '') == request.auth.uid;
+
+      allow create: if (
+          request.auth != null
+          && request.auth.token.firebase.sign_in_provider != 'anonymous'
+          && request.resource.data.keys().hasOnly([
+            'userUid', 'fullName', 'source', 'status', 'amount',
+            'paymentOrderId', 'deliveryDueAt', 'createdAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'userUid', 'fullName', 'source', 'status', 'amount',
+            'paymentOrderId', 'deliveryDueAt', 'createdAt'
+          ])
+          && request.resource.data.userUid == request.auth.uid
+          && request.resource.data.fullName is string
+          && request.resource.data.fullName.size() >= 2
+          && request.resource.data.fullName.size() <= 120
+          && request.resource.data.source == 'qr'
+          && request.resource.data.status == 'awaiting_payment'
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.amount == get(
+            /databases/$(database)/documents/memberCardSettings/current
+          ).data.price
+          && request.resource.data.paymentOrderId == requestId
+          && request.resource.data.deliveryDueAt is timestamp
+          && requestId.matches('^[A-Za-z0-9_-]{1,160}$')
+          && createdAtMatchesRequestTime()
+          && get(
+            /databases/$(database)/documents/users/$(request.auth.uid)
+          ).data.role == 'user'
+          && !exists(
+            /databases/$(database)/documents/wolves_member_card/$(request.auth.uid)
+          )
+        ) || (
+          isVerifiedStaff()
+          && request.resource.data.keys().hasOnly([
+            'fullName', 'buyerLookup', 'source', 'status', 'amount',
+            'saleId', 'createdBy', 'deliveryDueAt', 'createdAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'fullName', 'buyerLookup', 'source', 'status', 'amount',
+            'saleId', 'createdBy', 'deliveryDueAt', 'createdAt'
+          ])
+          && request.resource.data.fullName is string
+          && request.resource.data.fullName.size() >= 3
+          && request.resource.data.fullName.size() <= 254
+          && request.resource.data.buyerLookup == request.resource.data.fullName
+          && request.resource.data.source == 'pos'
+          && request.resource.data.status == 'payment_confirmed'
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.amount == get(
+            /databases/$(database)/documents/memberCardSettings/current
+          ).data.price
+          && request.resource.data.saleId == requestId
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.deliveryDueAt is timestamp
+          && createdAtMatchesRequestTime()
+          && existsAfter(
+            /databases/$(database)/documents/cafeSales/$(requestId)
+          )
+          && getAfter(
+            /databases/$(database)/documents/cafeSales/$(requestId)
+          ).data.employeeUid == request.auth.uid
+          && getAfter(
+            /databases/$(database)/documents/cafeSales/$(requestId)
+          ).data.total == request.resource.data.amount
+          && getAfter(
+            /databases/$(database)/documents/cafeSales/$(requestId)
+          ).data.paymentMethod in ['cash', 'qr', 'card']
+          && getAfter(
+            /databases/$(database)/documents/cafeSales/$(requestId)
+          ).data.memberCardBuyerLookup == request.resource.data.buyerLookup
+          && getAfter(
+            /databases/$(database)/documents/cafeSales/$(requestId)
+          ).data.items.size() == 1
+          && getAfter(
+            /databases/$(database)/documents/cafeSales/$(requestId)
+          ).data.items[0].productId == 'wolves-member-card'
+          && getAfter(
+            /databases/$(database)/documents/cafeSales/$(requestId)
+          ).data.items[0].name == 'Wolves Member Card'
+          && getAfter(
+            /databases/$(database)/documents/cafeSales/$(requestId)
+          ).data.items[0].unitPrice == request.resource.data.amount
+        );
+
+      allow update: if (
+          request.auth != null
+          && resource.data.userUid == request.auth.uid
+          && resource.data.source == 'qr'
+          && resource.data.status == 'awaiting_payment'
+          && request.resource.data.status == 'payment_reported'
+          && request.resource.data.paymentReportedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'paymentReportedAt'])
+        ) || (
+          request.auth != null
+          && resource.data.userUid == request.auth.uid
+          && resource.data.source == 'qr'
+          && resource.data.status == 'awaiting_payment'
+          && request.resource.data.status == 'payment_failed'
+          && request.resource.data.paymentFailedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'paymentFailedAt'])
+        ) || (
+          isAdmin()
+          && resource.data.source == 'qr'
+          && resource.data.status in ['awaiting_payment', 'payment_reported']
+          && request.resource.data.status == 'payment_confirmed'
+          && request.resource.data.paymentVerifiedBy == request.auth.uid
+          && request.resource.data.paymentVerifiedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'status', 'paymentVerifiedBy', 'paymentVerifiedAt'
+            ])
+        ) || (
+          isAdmin()
+          && resource.data.status == 'payment_confirmed'
+          && request.resource.data.status == 'issued_pending_print'
+          && request.resource.data.userUid is string
+          && request.resource.data.memberCardNumber is string
+          && request.resource.data.memberCardNumber.matches(
+            '^WLV-M-[0-9]{6}$'
+          )
+          && request.resource.data.issuedBy == request.auth.uid
+          && request.resource.data.issuedAt == request.time
+          && existsAfter(
+            /databases/$(database)/documents/wolves_member_card/$(request.resource.data.userUid)
+          )
+          && getAfter(
+            /databases/$(database)/documents/wolves_member_card/$(request.resource.data.userUid)
+          ).data.memberCardNumber == request.resource.data.memberCardNumber
+          && getAfter(
+            /databases/$(database)/documents/wolves_member_card/$(request.resource.data.userUid)
+          ).data.status == 'active'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'userUid', 'fullName', 'memberCardNumber', 'status',
+              'issuedBy', 'issuedAt'
+            ])
+        ) || (
+          isAdmin()
+          && resource.data.status == 'issued_pending_print'
+          && request.resource.data.status == 'ready_at_pos'
+          && request.resource.data.sentToPosAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'sentToPosAt'])
         );
 
       allow delete: if false;
@@ -2072,163 +2304,25 @@ service cloud.firestore {
 
     match /customers/{customerId} {
       allow get, list: if isAdmin();
-
-      allow create: if isAdmin()
-        && validMemberCardFields(request.resource.data)
-        && request.resource.data.fullName is string
-        && request.resource.data.fullName.size() >= 2
-        && request.resource.data.fullName.size() <= 120
-        && request.resource.data.phone is string
-        && request.resource.data.phone.size() >= 8
-        && request.resource.data.phone.size() <= 24
-        && request.resource.data.phone.matches(
-          '^([+][0-9]{8,15}|[0-9]{8,15})$'
-        )
-        && request.resource.data.nationalId is string
-        && request.resource.data.nationalId.size() >= 4
-        && request.resource.data.nationalId.size() <= 32
-        && request.resource.data.email is string
-        && request.resource.data.email.size() >= 5
-        && request.resource.data.email.size() <= 254
-        && request.resource.data.email.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$')
-        && request.resource.data.memberCardNumber is string
-        && request.resource.data.memberCardNumber.matches('^CW-M-[0-9]{6}$')
-        && request.resource.data.sequence is int
-        && request.resource.data.sequence > 0
-        && request.resource.data.createdBy == request.auth.uid
-        && createdAtMatchesRequestTime()
-        && getAfter(
-          /databases/$(database)/documents/customerMemberCardLookups/$(request.resource.data.memberCardNumber)
-        ).data.customerId == customerId
-        && getAfter(
-          /databases/$(database)/documents/customerMemberCardCounters/current
-        ).data.lastSequence == request.resource.data.sequence
-        && getAfter(
-          /databases/$(database)/documents/customerMemberCardCounters/current
-        ).data.lastCardNumber == request.resource.data.memberCardNumber;
-
-      allow update, delete: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     match /member_cards/{holderId} {
       allow get, list: if isAdmin();
-
-      allow create: if isVerifiedStaff()
-        && validMemberCardFields(request.resource.data)
-        && request.resource.data.fullName is string
-        && request.resource.data.fullName.size() >= 2
-        && request.resource.data.fullName.size() <= 120
-        && request.resource.data.phone is string
-        && request.resource.data.phone.size() >= 8
-        && request.resource.data.phone.size() <= 24
-        && request.resource.data.phone.matches(
-          '^([+][0-9]{8,15}|[0-9]{8,15})$'
-        )
-        && request.resource.data.nationalId is string
-        && request.resource.data.nationalId.size() >= 4
-        && request.resource.data.nationalId.size() <= 32
-        && request.resource.data.email is string
-        && request.resource.data.email.size() >= 5
-        && request.resource.data.email.size() <= 254
-        && request.resource.data.email.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$')
-        && request.resource.data.memberCardNumber is string
-        && request.resource.data.memberCardNumber.matches('^CW-M-[0-9]{6}$')
-        && request.resource.data.sequence is int
-        && request.resource.data.sequence > 0
-        && request.resource.data.createdBy == request.auth.uid
-        && createdAtMatchesRequestTime()
-        && getAfter(
-          /databases/$(database)/documents/customerMemberCardLookups/$(request.resource.data.memberCardNumber)
-        ).data.holderId == holderId
-        && getAfter(
-          /databases/$(database)/documents/customerMemberCardCounters/current
-        ).data.lastSequence == request.resource.data.sequence
-        && getAfter(
-          /databases/$(database)/documents/customerMemberCardCounters/current
-        ).data.lastCardNumber == request.resource.data.memberCardNumber;
-
+      allow create: if false;
       allow update, delete: if isAdmin();
     }
 
     match /customerMemberCardLookups/{cardNumber} {
       allow get: if isVerifiedStaff();
       allow list: if false;
-
-      allow create: if isVerifiedStaff()
-        && request.resource.data.keys().hasOnly([
-          'customerId', 'holderId', 'cardNumber', 'sequence',
-          'createdBy', 'createdAt'
-        ])
-        && (
-          request.resource.data.keys().hasAll(['customerId'])
-            && !request.resource.data.keys().hasAny(['holderId'])
-          || request.resource.data.keys().hasAll(['holderId'])
-            && !request.resource.data.keys().hasAny(['customerId'])
-        )
-        && request.resource.data.cardNumber == cardNumber
-        && cardNumber.matches('^CW-M-[0-9]{6}$')
-        && request.resource.data.sequence is int
-        && request.resource.data.sequence > 0
-        && request.resource.data.createdBy == request.auth.uid
-        && createdAtMatchesRequestTime()
-        && (
-          request.resource.data.keys().hasAny(['customerId'])
-            && request.resource.data.customerId is string
-            && memberCardHolderMatches(
-              request.resource.data.customerId,
-              cardNumber,
-              request.resource.data.sequence,
-              request.auth.uid
-            )
-          || request.resource.data.keys().hasAny(['holderId'])
-            && request.resource.data.holderId is string
-            && memberCardHolderMatches(
-              request.resource.data.holderId,
-              cardNumber,
-              request.resource.data.sequence,
-              request.auth.uid
-            )
-        )
-        && getAfter(
-          /databases/$(database)/documents/customerMemberCardCounters/current
-        ).data.lastSequence == request.resource.data.sequence
-        && getAfter(
-          /databases/$(database)/documents/customerMemberCardCounters/current
-        ).data.lastCardNumber == cardNumber;
-
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /customerMemberCardCounters/{counterId} {
       allow get: if isVerifiedStaff() && counterId == 'current';
       allow list: if false;
-
-      allow create: if isVerifiedStaff()
-        && counterId == 'current'
-        && request.resource.data.keys().hasOnly([
-          'lastSequence', 'lastCardNumber'
-        ])
-        && request.resource.data.lastSequence == 1
-        && request.resource.data.lastCardNumber.matches('^CW-M-[0-9]{6}$')
-        && memberCardHolderLookupMatches(
-          request.resource.data.lastCardNumber,
-          request.resource.data.lastSequence
-        );
-
-      allow update: if isVerifiedStaff()
-        && counterId == 'current'
-        && request.resource.data.keys().hasOnly([
-          'lastSequence', 'lastCardNumber'
-        ])
-        && resource.data.lastSequence is int
-        && request.resource.data.lastSequence == resource.data.lastSequence + 1
-        && request.resource.data.lastCardNumber.matches('^CW-M-[0-9]{6}$')
-        && memberCardHolderLookupMatches(
-          request.resource.data.lastCardNumber,
-          request.resource.data.lastSequence
-        );
-
-      allow delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /staffAccessRequests/{userId} {
@@ -2372,7 +2466,7 @@ service cloud.firestore {
           'cashSessionId', 'paymentMethod', 'total', 'cashReceived',
           'changeDue', 'items', 'cafeItems', 'productQuantities',
           'shopProductQuantities', 'shopVariantQuantities', 'customerUid',
-          'walletTransactionId', 'paidAt'
+          'walletTransactionId', 'memberCardBuyerLookup', 'paidAt'
         ])
         && request.resource.data.keys().hasAll([
           'employeeUid', 'employeeEmail', 'date', 'shift', 'attendanceId',
@@ -2447,6 +2541,23 @@ service cloud.firestore {
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
         && request.resource.data.items.size() <= 30
+        && (
+          !('memberCardBuyerLookup' in request.resource.data)
+          || request.resource.data.memberCardBuyerLookup is string
+            && request.resource.data.memberCardBuyerLookup.size() >= 3
+            && request.resource.data.memberCardBuyerLookup.size() <= 254
+            && request.resource.data.paymentMethod in ['cash', 'qr', 'card']
+            && get(
+              /databases/$(database)/documents/memberCardSettings/current
+            ).data.price == request.resource.data.total
+            && request.resource.data.items.size() == 1
+            && request.resource.data.items[0].productId == 'wolves-member-card'
+            && request.resource.data.items[0].name == 'Wolves Member Card'
+            && request.resource.data.items[0].unitPrice
+              == request.resource.data.total
+            && request.resource.data.items[0].lineTotal
+              == request.resource.data.total
+        )
         && request.resource.data.cafeItems is list
         && request.resource.data.cafeItems.size() <= 30
         && request.resource.data.productQuantities is map
@@ -2881,38 +2992,115 @@ service cloud.firestore {
         && (request.auth.uid == customerUid || isVerifiedStaff());
       allow list: if isAdmin();
 
-      allow create: if isVerifiedStaff()
-        && hasActiveMemberCard(customerUid)
-        && request.resource.data.keys().hasOnly([
+      allow create: if (
+        isVerifiedStaff()
+          && hasActiveMemberCard(customerUid)
+          && request.resource.data.keys().hasOnly([
+            'customerUid', 'completedMethods', 'completedCount', 'rewardClaimed',
+            'updatedBy', 'updatedAt', 'lastStampId', 'createdAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'customerUid', 'completedMethods', 'completedCount',
+            'rewardClaimed', 'updatedBy', 'updatedAt', 'lastStampId',
+            'createdAt'
+          ])
+          && request.resource.data.customerUid == customerUid
+          && request.resource.data.completedMethods is list
+          && request.resource.data.completedMethods.size() == 1
+          && validPassportMethod(request.resource.data.completedMethods[0])
+          && request.resource.data.completedCount == 1
+          && request.resource.data.rewardClaimed == false
+          && request.resource.data.updatedBy == request.auth.uid
+          && updatedAtMatchesRequestTime()
+          && createdAtMatchesRequestTime()
+          && request.resource.data.lastStampId is string
+          && passportStampMatches(
+            request.resource.data.lastStampId,
+            customerUid,
+            request.resource.data.completedMethods[0]
+          )
+      ) || (
+        request.resource.data.keys().hasOnly([
           'customerUid', 'completedMethods', 'completedCount', 'rewardClaimed',
           'updatedBy', 'updatedAt', 'lastStampId', 'createdAt'
         ])
-        && request.resource.data.keys().hasAll([
-          'customerUid', 'completedMethods', 'completedCount',
-          'rewardClaimed', 'updatedBy', 'updatedAt', 'lastStampId',
-          'createdAt'
-        ])
-        && request.resource.data.customerUid == customerUid
-        && request.resource.data.completedMethods is list
-        && request.resource.data.completedMethods.size() == 1
-        && validPassportMethod(request.resource.data.completedMethods[0])
-        && request.resource.data.completedCount == 1
-        && request.resource.data.rewardClaimed == false
-        && request.resource.data.updatedBy == request.auth.uid
-        && updatedAtMatchesRequestTime()
-        && createdAtMatchesRequestTime()
-        && request.resource.data.lastStampId is string
-        && passportStampMatches(
-          request.resource.data.lastStampId,
-          customerUid,
-          request.resource.data.completedMethods[0]
-        );
+          && request.resource.data.customerUid == customerUid
+          && request.resource.data.completedMethods is list
+          && request.resource.data.completedMethods.size() == 1
+          && request.resource.data.completedCount == 1
+          && request.resource.data.rewardClaimed == false
+          && request.resource.data.updatedBy is string
+          && request.resource.data.updatedBy == getAfter(
+            /databases/$(database)/documents/rewardQrTokens/$(request.resource.data.lastStampId)
+          ).data.issuerUid
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.lastStampId is string
+          && validPassportMethod(request.resource.data.completedMethods[0])
+          && validRewardQrPassportStamp(
+            request.resource.data.lastStampId,
+            customerUid,
+            request.resource.data.completedMethods[0]
+          )
+      );
 
-      allow update: if isVerifiedStaff()
-        && hasActiveMemberCard(customerUid)
-        && request.resource.data.customerUid == customerUid
-        && (
-          resource.data.rewardClaimed == false
+      allow update: if (
+        isVerifiedStaff()
+          && hasActiveMemberCard(customerUid)
+          && request.resource.data.customerUid == customerUid
+          && (
+            resource.data.rewardClaimed == false
+            && request.resource.data.rewardClaimed == false
+            && request.resource.data.completedMethods is list
+            && request.resource.data.completedMethods.size()
+              == resource.data.completedMethods.size() + 1
+            && request.resource.data.completedMethods.hasAll(
+              resource.data.completedMethods
+            )
+            && !resource.data.completedMethods.hasAny([
+              request.resource.data.completedMethods[
+                request.resource.data.completedMethods.size() - 1
+              ]
+            ])
+            && request.resource.data.completedCount
+              == resource.data.completedCount + 1
+            && request.resource.data.updatedBy == request.auth.uid
+            && updatedAtMatchesRequestTime()
+            && request.resource.data.lastStampId is string
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly([
+                'completedMethods', 'completedCount', 'updatedBy',
+                'updatedAt', 'lastStampId'
+              ])
+            && passportStampMatches(
+              request.resource.data.lastStampId,
+              customerUid,
+              request.resource.data.completedMethods[
+                request.resource.data.completedMethods.size() - 1
+              ]
+            )
+            || resource.data.completedCount == 9
+              && resource.data.rewardClaimed == false
+              && completePassport(resource.data.completedMethods)
+              && request.resource.data.rewardClaimed == true
+              && request.resource.data.rewardMugCode is string
+              && request.resource.data.rewardClaimedBy == request.auth.uid
+              && request.resource.data.rewardClaimedAt == request.time
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly([
+                  'rewardClaimed', 'rewardMugCode',
+                  'rewardClaimedBy', 'rewardClaimedAt'
+                ])
+              && getAfter(
+                /databases/$(database)/documents/legendaryMugRedemptions/$(request.resource.data.rewardMugCode)
+              ).data.customerUid == customerUid
+              && getAfter(
+                /databases/$(database)/documents/legendaryMugRedemptions/$(request.resource.data.rewardMugCode)
+              ).data.employeeUid == request.auth.uid
+          )
+      ) || (
+        request.resource.data.customerUid == customerUid
+          && resource.data.rewardClaimed == false
           && request.resource.data.rewardClaimed == false
           && request.resource.data.completedMethods is list
           && request.resource.data.completedMethods.size()
@@ -2927,60 +3115,68 @@ service cloud.firestore {
           ])
           && request.resource.data.completedCount
             == resource.data.completedCount + 1
-          && request.resource.data.updatedBy == request.auth.uid
-          && updatedAtMatchesRequestTime()
+          && request.resource.data.updatedAt == request.time
           && request.resource.data.lastStampId is string
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'completedMethods', 'completedCount', 'updatedBy',
-            'updatedAt', 'lastStampId'
-          ])
-          && passportStampMatches(
+          && request.resource.data.updatedBy == getAfter(
+            /databases/$(database)/documents/rewardQrTokens/$(request.resource.data.lastStampId)
+          ).data.issuerUid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'completedMethods', 'completedCount', 'updatedBy',
+              'updatedAt', 'lastStampId'
+            ])
+          && validRewardQrPassportStamp(
             request.resource.data.lastStampId,
             customerUid,
             request.resource.data.completedMethods[
               request.resource.data.completedMethods.size() - 1
             ]
           )
-          || resource.data.completedCount == 9
-            && resource.data.rewardClaimed == false
-            && completePassport(resource.data.completedMethods)
-            && request.resource.data.rewardClaimed == true
-            && request.resource.data.rewardMugCode is string
-            && request.resource.data.rewardClaimedBy == request.auth.uid
-            && request.resource.data.rewardClaimedAt == request.time
-            && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly([
-                'rewardClaimed', 'rewardMugCode',
-                'rewardClaimedBy', 'rewardClaimedAt'
-              ])
-            && getAfter(
-              /databases/$(database)/documents/legendaryMugRedemptions/$(request.resource.data.rewardMugCode)
-            ).data.customerUid == customerUid
-            && getAfter(
-              /databases/$(database)/documents/legendaryMugRedemptions/$(request.resource.data.rewardMugCode)
-            ).data.employeeUid == request.auth.uid
-        );
+      );
 
       allow delete: if false;
     }
 
     match /passportMethodStamps/{stampId} {
-      allow create: if isVerifiedStaff()
-        && request.resource.data.keys().hasOnly([
+      allow create: if (
+        isVerifiedStaff()
+          && request.resource.data.keys().hasOnly([
+            'customerUid', 'employeeUid', 'employeeEmail',
+            'methodName', 'stampedAt'
+          ])
+          && request.resource.data.customerUid is string
+          && request.resource.data.employeeUid == request.auth.uid
+          && request.resource.data.employeeEmail == request.auth.token.email
+          && validPassportMethod(request.resource.data.methodName)
+          && request.resource.data.stampedAt == request.time
+          && getAfter(
+            /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+          ).data.lastStampId == stampId
+          && getAfter(
+            /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+          ).data.completedMethods.hasAny([request.resource.data.methodName])
+      ) || (
+        request.resource.data.keys().hasOnly([
           'customerUid', 'employeeUid', 'employeeEmail',
           'methodName', 'stampedAt'
         ])
-        && request.resource.data.customerUid is string
-        && request.resource.data.employeeUid == request.auth.uid
-        && request.resource.data.employeeEmail == request.auth.token.email
-        && validPassportMethod(request.resource.data.methodName)
-        && request.resource.data.stampedAt == request.time
-        && getAfter(
-          /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
-        ).data.lastStampId == stampId
-        && getAfter(
-          /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
-        ).data.completedMethods.hasAny([request.resource.data.methodName]);
+          && request.resource.data.customerUid is string
+          && request.resource.data.employeeUid is string
+          && request.resource.data.employeeEmail is string
+          && validPassportMethod(request.resource.data.methodName)
+          && request.resource.data.stampedAt == request.time
+          && validRewardQrPassportStamp(
+            stampId,
+            request.resource.data.customerUid,
+            request.resource.data.methodName
+          )
+          && getAfter(
+            /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+          ).data.lastStampId == stampId
+          && getAfter(
+            /databases/$(database)/documents/passportProgress/$(request.resource.data.customerUid)
+          ).data.completedMethods.hasAny([request.resource.data.methodName])
+      );
 
       allow get, list: if isAdmin();
       allow update, delete: if false;
@@ -3431,27 +3627,75 @@ service cloud.firestore {
           getAfter(
             /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId)
           ).data.rewardId
-        );
-
-      allow update: if isVerifiedStaff()
-        && request.resource.data.keys().hasOnly([
+        )
+        || request.resource.data.keys().hasOnly([
           'customerUid', 'stamps', 'figures', 'updatedAt', 'updatedBy',
           'lastRedemptionId'
         ])
-        && request.resource.data.customerUid == customerUid
-        && request.resource.data.stamps == resource.data.stamps + 1
-        && validFigureUpdate()
-        && updatedAtMatchesRequestTime()
-        && request.resource.data.updatedBy == request.auth.uid
-        && request.resource.data.lastRedemptionId is string
-        && auditMatches(
-          request.resource.data.lastRedemptionId,
-          customerUid,
-          'coldBrewStamp',
-          getAfter(
-            /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId)
-          ).data.rewardId
-        );
+          && request.resource.data.customerUid == customerUid
+          && request.resource.data.stamps == 1
+          && validColdBrewFigureList(request.resource.data.figures)
+          && request.resource.data.figures.size() == 1
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.updatedBy is string
+          && request.resource.data.lastRedemptionId is string
+          && request.resource.data.updatedBy == getAfter(
+            /databases/$(database)/documents/rewardQrTokens/$(request.resource.data.lastRedemptionId)
+          ).data.issuerUid
+          && request.resource.data.figures[0]
+            == getAfter(
+              /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId)
+            ).data.figureId
+          && validRewardQrRedemption(
+            request.resource.data.lastRedemptionId,
+            customerUid,
+            'coldBrewStamp',
+            request.resource.data.figures[0]
+          );
+
+      allow update: if (
+        isVerifiedStaff()
+          && request.resource.data.keys().hasOnly([
+            'customerUid', 'stamps', 'figures', 'updatedAt', 'updatedBy',
+            'lastRedemptionId'
+          ])
+          && request.resource.data.customerUid == customerUid
+          && request.resource.data.stamps == resource.data.stamps + 1
+          && validFigureUpdate()
+          && updatedAtMatchesRequestTime()
+          && request.resource.data.updatedBy == request.auth.uid
+          && request.resource.data.lastRedemptionId is string
+          && auditMatches(
+            request.resource.data.lastRedemptionId,
+            customerUid,
+            'coldBrewStamp',
+            getAfter(
+              /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId)
+            ).data.rewardId
+          )
+      ) || (
+        request.resource.data.keys().hasOnly([
+          'customerUid', 'stamps', 'figures', 'updatedAt', 'updatedBy',
+          'lastRedemptionId'
+        ])
+          && request.resource.data.customerUid == customerUid
+          && request.resource.data.stamps == resource.data.stamps + 1
+          && validFigureUpdate()
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.updatedBy is string
+          && request.resource.data.lastRedemptionId is string
+          && request.resource.data.updatedBy == getAfter(
+            /databases/$(database)/documents/rewardQrTokens/$(request.resource.data.lastRedemptionId)
+          ).data.issuerUid
+          && validRewardQrRedemption(
+            request.resource.data.lastRedemptionId,
+            customerUid,
+            'coldBrewStamp',
+            getAfter(
+              /databases/$(database)/documents/rewardRedemptions/$(request.resource.data.lastRedemptionId)
+            ).data.figureId
+          )
+      );
 
       allow delete: if false;
     }
@@ -4220,39 +4464,136 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /rewardRedemptions/{redemptionId} {
+    match /rewardQrTokens/{tokenId} {
+      allow get: if request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      allow list: if false;
+
       allow create: if isVerifiedStaff()
+        && tokenId.matches(
+          '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        )
         && request.resource.data.keys().hasOnly([
-          'customerUid', 'employeeUid', 'employeeEmail',
-          'rewardType', 'rewardId', 'figureId', 'redeemedAt',
-          'distanceMeters', 'status'
+          'rewardType', 'rewardId', 'issuerUid', 'issuerEmail',
+          'status', 'createdAt', 'expiresAt'
         ])
         && request.resource.data.keys().hasAll([
-          'customerUid', 'employeeUid', 'employeeEmail',
-          'rewardType', 'rewardId', 'redeemedAt'
+          'rewardType', 'rewardId', 'issuerUid', 'issuerEmail',
+          'status', 'createdAt', 'expiresAt'
         ])
-        && request.resource.data.customerUid is string
-        && request.resource.data.customerUid.size() > 0
-        && exists(
-          /databases/$(database)/documents/users/$(request.resource.data.customerUid)
-        )
-        && request.resource.data.employeeUid == request.auth.uid
-        && request.resource.data.employeeEmail == request.auth.token.email
-        && request.resource.data.rewardId is string
-        && request.resource.data.rewardId.size() > 0
-        && request.resource.data.redeemedAt == request.time
+        && request.resource.data.issuerUid == request.auth.uid
+        && request.resource.data.issuerEmail == request.auth.token.email
+        && request.resource.data.status == 'issued'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt
+          <= request.time + duration.value(10, 'm')
         && (
-          request.resource.data.rewardType == 'coldBrewStamp'
-            && redemptionId == request.resource.data.rewardId
-            && request.resource.data.status == 'delivered'
-            && request.resource.data.figureId in coldBrewFigureIds()
-            && request.resource.data.distanceMeters is number
-            && request.resource.data.distanceMeters >= 0
-            && request.resource.data.distanceMeters <= 50
-            && getAfter(
-              /databases/$(database)/documents/coldBrewAlbums/$(request.resource.data.customerUid)
-            ).data.lastRedemptionId == redemptionId
+          request.resource.data.rewardType == 'passportMethod'
+            && validPassportMethod(request.resource.data.rewardId)
+          || request.resource.data.rewardType == 'coldBrewStamp'
+            && request.resource.data.rewardId in coldBrewFigureIds()
         );
+
+      allow update: if resource.data.status == 'issued'
+        && resource.data.expiresAt > request.time
+        && request.resource.data.keys().hasOnly([
+          'rewardType', 'rewardId', 'issuerUid', 'issuerEmail',
+          'status', 'createdAt', 'expiresAt', 'redeemedBy', 'redeemedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'rewardType', 'rewardId', 'issuerUid', 'issuerEmail',
+          'status', 'createdAt', 'expiresAt', 'redeemedBy', 'redeemedAt'
+        ])
+        && request.resource.data.rewardType == resource.data.rewardType
+        && request.resource.data.rewardId == resource.data.rewardId
+        && request.resource.data.issuerUid == resource.data.issuerUid
+        && request.resource.data.issuerEmail == resource.data.issuerEmail
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.expiresAt == resource.data.expiresAt
+        && request.resource.data.status == 'redeemed'
+        && request.resource.data.redeemedBy is string
+        && request.resource.data.redeemedAt == request.time
+        && validRewardQrRedemption(
+          tokenId,
+          request.resource.data.redeemedBy,
+          resource.data.rewardType,
+          resource.data.rewardId
+        );
+
+      allow delete: if false;
+    }
+
+    match /rewardRedemptions/{redemptionId} {
+      allow create: if (
+        isVerifiedStaff()
+          && request.resource.data.keys().hasOnly([
+            'customerUid', 'employeeUid', 'employeeEmail',
+            'rewardType', 'rewardId', 'figureId', 'redeemedAt',
+            'distanceMeters', 'status'
+          ])
+          && request.resource.data.keys().hasAll([
+            'customerUid', 'employeeUid', 'employeeEmail',
+            'rewardType', 'rewardId', 'redeemedAt'
+          ])
+          && request.resource.data.customerUid is string
+          && request.resource.data.customerUid.size() > 0
+          && exists(
+            /databases/$(database)/documents/users/$(request.resource.data.customerUid)
+          )
+          && request.resource.data.employeeUid == request.auth.uid
+          && request.resource.data.employeeEmail == request.auth.token.email
+          && request.resource.data.rewardId is string
+          && request.resource.data.rewardId.size() > 0
+          && request.resource.data.redeemedAt == request.time
+          && request.resource.data.rewardType == 'coldBrewStamp'
+          && redemptionId == request.resource.data.rewardId
+          && request.resource.data.status == 'delivered'
+          && request.resource.data.figureId in coldBrewFigureIds()
+          && request.resource.data.distanceMeters is number
+          && request.resource.data.distanceMeters >= 0
+          && request.resource.data.distanceMeters <= 50
+          && getAfter(
+            /databases/$(database)/documents/coldBrewAlbums/$(request.resource.data.customerUid)
+          ).data.lastRedemptionId == redemptionId
+      ) || (
+        request.resource.data.keys().hasOnly([
+          'customerUid', 'receiverUid', 'employeeUid', 'employeeEmail',
+          'issuerUid', 'issuerEmail', 'rewardType', 'rewardId',
+          'methodName', 'figureId', 'distanceMeters', 'redeemedAt', 'status'
+        ])
+          && request.resource.data.keys().hasAll([
+            'customerUid', 'receiverUid', 'employeeUid', 'employeeEmail',
+            'issuerUid', 'issuerEmail', 'rewardType', 'rewardId',
+            'redeemedAt', 'status'
+          ])
+          && request.resource.data.customerUid is string
+          && request.resource.data.employeeUid == request.resource.data.issuerUid
+          && request.resource.data.employeeEmail == request.resource.data.issuerEmail
+          && request.resource.data.rewardId == redemptionId
+          && request.resource.data.redeemedAt == request.time
+          && (
+            request.resource.data.rewardType == 'passportMethod'
+              && validPassportMethod(request.resource.data.methodName)
+              && validRewardQrRedemption(
+                redemptionId,
+                request.resource.data.customerUid,
+                'passportMethod',
+                request.resource.data.methodName
+              )
+            || request.resource.data.rewardType == 'coldBrewStamp'
+              && request.resource.data.figureId in coldBrewFigureIds()
+              && request.resource.data.distanceMeters == 0
+              && validRewardQrRedemption(
+                redemptionId,
+                request.resource.data.customerUid,
+                'coldBrewStamp',
+                request.resource.data.figureId
+              )
+          )
+      );
 
       allow get, list: if isAdmin();
       allow update, delete: if false;

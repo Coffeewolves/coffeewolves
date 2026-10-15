@@ -493,8 +493,10 @@ Para activarlo en producción:
 3. Instala/abre la PWA en cada dispositivo, inicia sesión con una cuenta de
    personal o Gerencia verificada y activa las notificaciones desde la sección
    correspondiente (**ACTIVAR ALARMA EN ESTE DISPOSITIVO** en cocina o
-   **ACTIVAR NOTIFICACIONES DE FALTANTE** en el catálogo). Acepta el permiso de
-   notificaciones. Cada dispositivo debe registrarse por separado.
+   **ACTIVAR NOTIFICACIONES DE FALTANTE** en el catálogo). La alarma sonora de
+   la pantalla funciona aunque todavía no se haya configurado VAPID; para recibir
+   notificaciones push con la app cerrada, acepta el permiso del navegador y
+   configura VAPID antes de compilar. Cada dispositivo debe registrarse por separado.
 4. Compila la web con la clave pública VAPID (no es una clave privada):
 
    ```sh

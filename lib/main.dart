@@ -34,8 +34,14 @@ import 'pack_legacy_screen.dart';
 import 'pet_profiles_screen.dart';
 import 'profile_creation_form.dart';
 import 'member_card_service.dart';
+import 'member_card_print_service.dart';
+import 'member_card_qr_payment_dialog.dart';
+import 'member_card_request_service.dart';
+import 'membership_card_widget.dart';
 import 'product_catalog_service.dart';
 import 'reward_audit_service.dart';
+import 'reward_qr_scanner.dart';
+import 'reward_qr_service.dart';
 import 'collectible_album_tile.dart';
 import 'collectible_models.dart';
 import 'payment_api_service.dart';
@@ -4309,6 +4315,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   late final TextEditingController _chatMessageController;
   late final TextEditingController _posPaymentReceivedController;
   late final TextEditingController _posCustomerUidController;
+  late final TextEditingController _memberCardPriceController;
   late final TextEditingController _passportCustomerUidController;
   late final AnimationController _splashController;
   final background_music.BackgroundMusic _musicPlayer =
@@ -4328,9 +4335,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   late final RewardAuditService _rewardAuditService;
   late final BusinessOperationsService _businessOperationsService;
   late final MemberCardService _memberCardService;
+  late final MemberCardRequestService _memberCardRequestService;
   late final ProductCatalogService _productCatalogService;
   late final BitacoraService _bitacoraService;
   late final OrderNotificationService _orderNotificationService;
+  late final RewardQrService _rewardQrService;
   late final PaymentApiService _paymentApiService;
   late final ChatCreditService _chatCreditService;
   StreamSubscription<User?>? _authSubscription;
@@ -4357,7 +4366,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   final Map<String, int> _coldBrewAlbumCounts = {};
   final Map<String, GiftCard> _giftCards = {};
   String? _memberCardNumberUid;
-  Future<String>? _memberCardNumberFuture;
+  Future<String?>? _memberCardNumberFuture;
   final Set<String> _unavailableItems = {};
   final Set<String> _firestoreCafeProductIds = {};
   final List<PosFamily> _posFamilies = _defaultPosFamilies.toList();
@@ -4420,6 +4429,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   bool _adminPosAccessEnabled = false;
   bool _debugRoleBypassActive = false;
   bool _isRecordingSale = false;
+  bool _isOpeningCash = false;
   String? _posSaleAttemptId;
   bool _isProcessingBaristaCanje = false;
   bool _cafeOrderSoundEnabled = false;
@@ -4775,6 +4785,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     _posSearchController = TextEditingController();
     _posPaymentReceivedController = TextEditingController();
     _posCustomerUidController = TextEditingController();
+    _memberCardPriceController = TextEditingController();
     _passportCustomerUidController = TextEditingController();
     for (final method in methods) {
       _passportTastingNoteControllers[method.name] = TextEditingController();
@@ -4783,10 +4794,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     _businessOperationsService =
         BusinessOperationsService(FirebaseFirestore.instance);
     _memberCardService = MemberCardService(FirebaseFirestore.instance);
+    _memberCardRequestService =
+        MemberCardRequestService(FirebaseFirestore.instance);
     _productCatalogService = ProductCatalogService(FirebaseFirestore.instance);
     _bitacoraService = BitacoraService(FirebaseFirestore.instance);
     _orderNotificationService =
         OrderNotificationService(FirebaseFirestore.instance);
+    _rewardQrService = RewardQrService();
     _paymentApiService = PaymentApiService(auth: FirebaseAuth.instance);
     _chatCreditService = ChatCreditService();
     _authStateStream = FirebaseAuth.instance.authStateChanges();
@@ -4860,6 +4874,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     _posSearchController.dispose();
     _posPaymentReceivedController.dispose();
     _posCustomerUidController.dispose();
+    _memberCardPriceController.dispose();
     _passportCustomerUidController.dispose();
     for (final controller in _passportTastingNoteControllers.values) {
       controller.dispose();
@@ -5563,15 +5578,15 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }
 
   Future<void> _activateCafeOrderSound() async {
+    final user = _firebaseUser;
+    if (user == null || !_canAccessKitchen || _debugRoleBypassActive) {
+      _showSnackBar(
+        'Inicia sesión con una cuenta verificada de gerencia, TPV, caja o cocina.',
+      );
+      return;
+    }
+
     try {
-      final user = _firebaseUser;
-      if (user == null || !_canAccessKitchen || _debugRoleBypassActive) {
-        throw StateError(
-          'Inicia sesión con una cuenta verificada de gerencia, TPV, caja o cocina.',
-        );
-      }
-      final pushSetup =
-          _orderNotificationService.activateForAuthorizedUser(user.uid);
       await _musicPlayer.playOrderBell();
       if (!mounted) return;
       setState(() {
@@ -5581,22 +5596,44 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           .any((order) => order.status == KitchenOrderStatus.pending)) {
         await _startCafeOrderAlarm();
       }
-      await pushSetup;
-      if (mounted) setState(() => _cafePushEnabled = true);
-      _showSnackBar(
-        !_pendingCafeOrders
-                .any((order) => order.status == KitchenOrderStatus.pending)
-            ? 'Sonido y notificaciones activados en este dispositivo.'
-            : 'Alarma activa. Se repetirá hasta que cocina inicie la comanda.',
-      );
     } catch (error, stackTrace) {
-      debugPrint('No se pudo activar la alarma de cocina: $error');
+      debugPrint('No se pudo activar el sonido de cocina: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         _showSnackBar(
-          error is StateError
-              ? error.message.toString()
-              : 'No se pudo activar el sonido/push. Revisa permisos y conexión.',
+          'No se pudo activar el sonido de alarma. Revisa el audio del dispositivo.',
+        );
+      }
+      return;
+    }
+
+    if (!_orderNotificationService.isWebPushConfigured) {
+      _showSnackBar(
+        'Alarma sonora activada en esta pantalla. Para recibir avisos con '
+        'la app cerrada, Gerencia debe configurar la clave Web Push de Firebase.',
+      );
+      return;
+    }
+
+    try {
+      await _orderNotificationService.activateForAuthorizedUser(user.uid);
+      if (!mounted) return;
+      setState(() => _cafePushEnabled = true);
+      _showSnackBar(
+        _pendingCafeOrders.any(
+          (order) => order.status == KitchenOrderStatus.pending,
+        )
+            ? 'Alarma activa. Se repetirá hasta que cocina inicie la comanda.'
+            : 'Sonido y notificaciones activados en este dispositivo.',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('No se pudieron activar las notificaciones de cocina: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        _showSnackBar(
+          'La alarma sonora está activa en esta pantalla, pero no se pudieron '
+          'activar las notificaciones en segundo plano. Revisa los permisos '
+          'del navegador y la configuración Web Push.',
         );
       }
     }
@@ -6796,6 +6833,48 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     setState(() => _activePosBarista = _authenticatedBarista);
   }
 
+  Future<void> _addMemberCardToPosCart() async {
+    if (cart.isNotEmpty) {
+      _showSnackBar(
+        'Registra la Member Card en una venta separada para enviar su solicitud a Gerencia.',
+      );
+      return;
+    }
+    try {
+      final price = await _memberCardRequestService.getPrice();
+      if (price == null) {
+        _showSnackBar(
+          'Gerencia todavía no configuró el precio de la Member Card.',
+        );
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        cart.add({
+          'name': MemberCardRequestService.qrProductName,
+          'price': price,
+          'qty': 1,
+          'category': 'Membresía',
+          'catalogId': MemberCardRequestService.qrProductId,
+          'catalogCollection': 'memberCard',
+          'membershipCard': true,
+          'stockTracked': false,
+        });
+      });
+      _showSnackBar(
+        'Member Card agregada. Ingresa el correo o username del comprador.',
+      );
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo cargar el precio de Member Card: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+      _showSnackBar('No se pudo consultar el precio de Member Card.');
+    } catch (error, stackTrace) {
+      debugPrint('Error preparando la venta de Member Card: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _showSnackBar('No se pudo agregar la Member Card a la venta.');
+    }
+  }
+
   Future<void> _recordPosSale() async {
     final user = _firebaseUser;
     if (user == null || !_canAccessPos || _activePosBarista == null) {
@@ -6826,6 +6905,22 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     }
     final paymentMethod = _selectedPaymentMethod;
     var saleCustomerUid = _customerUidForSale?.trim();
+    final memberCardLines =
+        cart.where((item) => item['membershipCard'] == true).toList();
+    final memberCardBuyerLookup =
+        memberCardLines.isEmpty ? null : _posCustomerUidController.text.trim();
+    if (memberCardLines.isNotEmpty) {
+      if (cart.length != 1 ||
+          memberCardBuyerLookup == null ||
+          memberCardBuyerLookup.length < 3 ||
+          paymentMethod == 'wallet') {
+        _showSnackBar(
+          'La Member Card debe cobrarse sola. Ingresa el correo o username del comprador y cobra en efectivo, QR o tarjeta.',
+        );
+        return;
+      }
+      saleCustomerUid = null;
+    }
     if (paymentMethod == 'wallet') {
       if (saleCustomerUid == null || saleCustomerUid.isEmpty) {
         _showSnackBar('Ingresa el UID o Wolves Member Card del cliente.');
@@ -6867,7 +6962,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       final size = cartItem['size'] as String?;
       saleItems.add({
         'productId': productId,
-        'catalogCollection': isShopProduct ? 'products' : 'cafeCatalog',
+        'catalogCollection': isShopProduct
+            ? 'products'
+            : cartItem['catalogCollection'] == 'memberCard'
+                ? 'memberCard'
+                : 'cafeCatalog',
         'name': name,
         if (size != null) 'size': size,
         'category': product == null
@@ -6923,6 +7022,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         trackedShopProducts: trackedShopProducts,
         trackedShopVariants: trackedShopVariants,
         customerUid: saleCustomerUid,
+        memberCardBuyerLookup: memberCardBuyerLookup,
         tableNumber: _selectedPosTableNumber,
       );
       if (!mounted) return;
@@ -7087,21 +7187,45 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   Future<void> _openCashForShift(String shift) async {
     final user = _firebaseUser;
-    if (user == null) return;
-    final amount = await _requestCashAmount(
-      title: 'Apertura de caja',
-      fieldLabel: 'Monto inicial',
-    );
-    if (amount == null) return;
+    if (user == null) {
+      _showSnackBar('Tu sesión expiró. Inicia sesión nuevamente.');
+      return;
+    }
+    if (_isOpeningCash) return;
+
+    setState(() => _isOpeningCash = true);
     try {
+      final amount = await _requestCashAmount(
+        title: 'Apertura de caja',
+        fieldLabel: 'Monto inicial',
+      );
+      if (amount == null || !mounted) return;
+
       await _businessOperationsService.openCashSession(
         employeeUid: user.uid,
         date: DateTime.now(),
         shift: shift,
         openingAmount: amount,
       );
-    } catch (error) {
+      if (mounted) _showSnackBar('Caja abierta correctamente.');
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo abrir la caja (${error.code}): ${error.message}');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        _showSnackBar(
+          error.code == 'permission-denied'
+              ? 'Firebase rechazó la apertura de caja. Verifica que tu turno '
+                  'esté asignado y que las reglas actualizadas estén publicadas.'
+              : 'No se pudo abrir la caja (${error.code}). '
+                  'Comprueba tu conexión e inténtalo otra vez.',
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo abrir la caja: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted) _showSnackBar(error.toString());
+    } finally {
+      if (mounted) setState(() => _isOpeningCash = false);
     }
   }
 
@@ -8244,7 +8368,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     if (!_adminFinanceUnlocked || !const {'admin', 'pos'}.contains(page)) {
       return;
     }
-    _adminFinanceTimeout = Timer(const Duration(minutes: 2), () {
+    _adminFinanceTimeout = Timer(const Duration(minutes: 10), () {
       if (!mounted || _userRole != 'admin') return;
       _adminFinanceUnlocked = false;
       unawaited(_signOut());
@@ -9396,90 +9520,61 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     }
   }
 
-  Future<void> _redeemScannedColdBrewFigure({
+  Future<void> _redeemScannedRewardQr({
     required String customerUid,
-    required String figureId,
+    required String payload,
   }) async {
     if (_isProcessingBaristaCanje) return;
-    final qrId = 'coffee-wolves:cold-brew:'
-        '${base64UrlEncode(List<int>.generate(16, (_) => _secureRandom.nextInt(256), growable: false))}:'
-        '${DateTime.now().microsecondsSinceEpoch}';
-    setState(() => _isProcessingBaristaCanje = true);
-    if (!_debugRoleBypassActive) {
-      final employee = _firebaseUser;
-      if (employee == null ||
-          employee.emailVerified != true ||
-          customerUid.trim().isEmpty) {
-        setState(() => _isProcessingBaristaCanje = false);
-        _showBaristaMessage(
-          'Se requiere un cliente identificado y una cuenta de personal '
-          'verificada.',
-        );
-        return;
-      }
-      try {
-        await _rewardAuditService.redeemColdBrewStamp(
-          customerUid: customerUid.trim(),
-          employeeUid: employee.uid,
-          employeeEmail: employee.email ?? '',
-          qrId: qrId,
-          figureId: figureId,
-          distanceMeters: 0,
-        );
-      } on FirebaseException catch (error, stackTrace) {
-        debugPrint('No se pudo guardar el canje Cold Brew: ${error.code}');
-        debugPrintStack(stackTrace: stackTrace);
-        if (mounted) {
-          setState(() => _isProcessingBaristaCanje = false);
-        }
-        _showBaristaMessage(
-          'No se confirmó el canje. Firestore rechazó la operación '
-          '(${error.code}); no se asignó la figurita.',
-        );
-        return;
-      } on StateError catch (error) {
-        if (mounted) {
-          setState(() => _isProcessingBaristaCanje = false);
-        }
-        _showBaristaMessage(error.message);
-        return;
-      } catch (error, stackTrace) {
-        debugPrint('No se pudo confirmar el canje Cold Brew: $error');
-        debugPrintStack(stackTrace: stackTrace);
-        if (mounted) {
-          setState(() => _isProcessingBaristaCanje = false);
-        }
-        _showBaristaMessage(
-          'No se confirmó el canje. No se asignó la figurita.',
-        );
-        return;
-      }
+    final employee = _firebaseUser;
+    if (employee == null ||
+        employee.emailVerified != true ||
+        customerUid.trim().isEmpty) {
+      throw StateError(
+        'Se requiere una Member Card identificada y una cuenta de personal verificada.',
+      );
     }
-
-    setState(() {
-      _baristaAuditLog.insert(
-        0,
-        BaristaAuditEntry(
-          scannedAt: DateTime.now(),
-          baristaName: _authenticatedBarista,
-          customerId: customerUid,
-          qrId: qrId,
-          distanceMeters: 0,
-        ),
+    setState(() => _isProcessingBaristaCanje = true);
+    try {
+      final reward = await _rewardQrService.redeem(
+        payload,
+        customerUid: customerUid.trim(),
       );
-      _coldBrewAlbumCounts.update(
-        customerUid.trim(),
-        (count) => count + 1,
-        ifAbsent: () => 1,
+      if (!mounted) return;
+      final qrId = payload.substring('coffee-wolves:reward-qr:'.length);
+      setState(() {
+        _baristaAuditLog.insert(
+          0,
+          BaristaAuditEntry(
+            scannedAt: DateTime.now(),
+            baristaName: _authenticatedBarista,
+            customerId: customerUid.trim(),
+            qrId: qrId,
+            distanceMeters: 0,
+          ),
+        );
+        if (reward.rewardType == 'coldBrewStamp') {
+          _coldBrewAlbumCounts.update(
+            customerUid.trim(),
+            (currentCount) => currentCount + 1,
+            ifAbsent: () => 1,
+          );
+        }
+      });
+      await _signalSuccessfulCanje();
+      _showBaristaMessage(
+        reward.rewardType == 'passportMethod'
+            ? 'Método ${reward.rewardId} validado para ${customerUid.trim()}.'
+            : 'Figurita registrada para ${customerUid.trim()}.',
       );
-      _isProcessingBaristaCanje = false;
-    });
-    await _signalSuccessfulCanje();
-    final figureName =
-        coldBrewFigures.firstWhere((figure) => figure.id == figureId).name;
-    _showBaristaMessage(
-      'Figurita $figureName registrada para ${customerUid.trim()}.',
-    );
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('Firestore rechazó el canje del QR (${error.code}).');
+      debugPrintStack(stackTrace: stackTrace);
+      throw StateError(
+        error.message ?? 'Firestore no confirmó el canje (${error.code}).',
+      );
+    } finally {
+      if (mounted) setState(() => _isProcessingBaristaCanje = false);
+    }
   }
 
   Future<void> _openColdBrewQrScanner() async {
@@ -9490,75 +9585,321 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         resolveCustomer: (qrValue) => _memberCardService.resolveUserUid(
           memberCardValueFromQr(qrValue),
         ),
-        resolveFigure: parseColdBrewFigureQr,
-        redeem: (customerUid, figureId) => _redeemScannedColdBrewFigure(
+        resolveFigure: (qrValue) {
+          if (!RegExp(
+            r'^coffee-wolves:reward-qr:[0-9a-f-]{36}$',
+            caseSensitive: false,
+          ).hasMatch(qrValue.trim())) {
+            throw const FormatException(
+              'Escanea un QR de premio dinámico emitido por el personal.',
+            );
+          }
+          return qrValue.trim();
+        },
+        redeem: (customerUid, payload) => _redeemScannedRewardQr(
           customerUid: customerUid,
-          figureId: figureId,
+          payload: payload,
         ),
       ),
     );
   }
 
-  Future<void> _showColdBrewFigureQrs() async {
+  Future<void> _openCustomerRewardQrScanner() async {
+    final customer = _firebaseUser;
+    if (customer == null ||
+        customer.isAnonymous ||
+        customer.emailVerified != true ||
+        _isStaffRole ||
+        _isKitchenRole ||
+        _userRole == 'admin') {
+      _showSnackBar(
+        'Inicia sesión con una cuenta de cliente verificada para escanear premios.',
+      );
+      return;
+    }
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: card,
-        title: const Text(
-          'QR DE FIGURITAS COLD BREW',
-          style: TextStyle(color: gold, fontSize: 14),
-        ),
-        content: SizedBox(
-          width: 440,
-          height: MediaQuery.sizeOf(dialogContext).height * 0.62,
-          child: GridView.builder(
-            itemCount: coldBrewFigures.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 0.9,
+      builder: (dialogContext) => RewardQrScanner(
+        onScan: _processCustomerRewardQr,
+      ),
+    );
+  }
+
+  Future<void> _processCustomerRewardQr(String scannedValue) async {
+    final customer = _firebaseUser;
+    if (customer == null || customer.emailVerified != true) {
+      throw StateError(
+        'Inicia sesión con una cuenta de cliente verificada para canjear.',
+      );
+    }
+    final value = scannedValue.trim();
+    if (value.startsWith('coffee-wolves:reward-qr:')) {
+      try {
+        final reward = await _rewardQrService.redeem(value);
+        await _signalSuccessfulCanje();
+        final rewardName = reward.rewardType == 'passportMethod'
+            ? 'Método ${reward.rewardId} añadido a tu Coffee Passport.'
+            : 'Figurita Cold Brew añadida a tu álbum.';
+        _showSnackBar('Beneficio recibido. $rewardName');
+        return;
+      } on FirebaseException catch (error, stackTrace) {
+        debugPrint('Firestore rechazó el canje del QR (${error.code}).');
+        debugPrintStack(stackTrace: stackTrace);
+        throw StateError(
+          error.message ?? 'Firestore no confirmó el canje (${error.code}).',
+        );
+      }
+    }
+
+    final uri = Uri.tryParse(value);
+    final authenticityCode =
+        (uri?.queryParameters['authenticity'] ?? '').toUpperCase();
+    if (authenticityCode.isNotEmpty &&
+        isValidCollectibleModelUnit(authenticityCode)) {
+      await _claimCollectible(authenticityCode);
+      return;
+    }
+
+    final giftCardCode =
+        (uri?.queryParameters['giftCard'] ?? value).trim().toUpperCase();
+    if (RegExp(r'^[A-Z0-9-]{4,80}$').hasMatch(giftCardCode) &&
+        !giftCardCode.startsWith('CW-')) {
+      try {
+        final balance = await _rewardAuditService.redeemGiftCard(
+          code: giftCardCode,
+          customerUid: customer.uid,
+        );
+        if (!mounted || _firebaseUser?.uid != customer.uid) return;
+        setState(() => _walletBalance = balance);
+        await _signalSuccessfulCanje();
+        _showSnackBar(
+          'Gift Card recibida. Tu saldo disponible es ${_formatPrice(balance)}.',
+        );
+        return;
+      } on FirebaseException catch (error, stackTrace) {
+        debugPrint('No se pudo canjear la Gift Card (${error.code}).');
+        debugPrintStack(stackTrace: stackTrace);
+        throw StateError(
+          'No se canjeó la Gift Card (${error.code}). '
+          'No se modificó tu saldo.',
+        );
+      } on StateError {
+        rethrow;
+      } catch (error, stackTrace) {
+        debugPrint('Error al canjear la Gift Card: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        throw StateError('No se pudo confirmar la Gift Card.');
+      }
+    }
+
+    if (value.startsWith('coffee-wolves:cold-brew-figure:')) {
+      throw StateError(
+        'Este QR de figurita es estático y no registra quién lo emitió. '
+        'Pide al personal un QR de premio nuevo.',
+      );
+    }
+    if (value.startsWith('WOLVES-DEMO-NOT-A-REAL-PAYMENT')) {
+      throw StateError(
+        'Los QR de pago no son QR de premios y no se pueden canjear aquí.',
+      );
+    }
+    if (value.startsWith('CW-')) {
+      throw StateError(
+        'Ese QR identifica una Member Card, pero no entrega un premio. '
+        'Pide al personal que emita un QR de beneficio.',
+      );
+    }
+    throw StateError(
+      'No reconocemos este QR como premio, Gift Card o certificado de autenticidad.',
+    );
+  }
+
+  Future<void> _showIssueRewardQrDialog() async {
+    final employee = _firebaseUser;
+    if (employee == null ||
+        employee.emailVerified != true ||
+        !_canAccessPos ||
+        _debugRoleBypassActive) {
+      _showSnackBar(
+        'Solo personal verificado de TPV o gerencia puede emitir QR de premios.',
+      );
+      return;
+    }
+
+    var rewardType = 'coldBrewStamp';
+    var rewardId = coldBrewFigures.first.id;
+    var isIssuing = false;
+    String? payload;
+    DateTime? expiresAt;
+    String? errorMessage;
+    final methodNames = methods.map((method) => method.name).toList();
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final choices =
+              rewardType == 'coldBrewStamp' ? coldBrewFigures : null;
+          final rewardOptions = choices == null
+              ? methodNames
+                  .map((name) => (id: name, name: name))
+                  .toList(growable: false)
+              : choices
+                  .map((figure) => (id: figure.id, name: figure.name))
+                  .toList(growable: false);
+          return AlertDialog(
+            backgroundColor: card,
+            title: Text(
+              payload == null ? 'EMITIR QR DE PREMIO' : 'QR DE PREMIO',
+              style: const TextStyle(color: gold),
             ),
-            itemBuilder: (context, index) {
-              final figure = coldBrewFigures[index];
-              return Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: card2,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      color: Colors.white,
-                      padding: const EdgeInsets.all(4),
-                      child: QrImageView(
-                        key: ValueKey('cold-brew-figure-qr-${figure.id}'),
-                        data: coldBrewFigureQrPayload(figure.id),
-                        size: 112,
-                        backgroundColor: Colors.white,
-                        padding: EdgeInsets.zero,
-                      ),
+            content: SizedBox(
+              width: 420,
+              child: payload == null
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        DropdownButtonFormField<String>(
+                          key: const ValueKey('reward-qr-type'),
+                          value: rewardType,
+                          decoration:
+                              const InputDecoration(labelText: 'Beneficio'),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'coldBrewStamp',
+                              child: Text('Figurita Cold Brew'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'passportMethod',
+                              child: Text('Método Coffee Passport'),
+                            ),
+                          ],
+                          onChanged: isIssuing
+                              ? null
+                              : (value) {
+                                  if (value == null) return;
+                                  setDialogState(() {
+                                    rewardType = value;
+                                    rewardId = value == 'coldBrewStamp'
+                                        ? coldBrewFigures.first.id
+                                        : methodNames.first;
+                                    errorMessage = null;
+                                  });
+                                },
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          key: ValueKey('reward-qr-id-$rewardType'),
+                          value: rewardId,
+                          decoration:
+                              const InputDecoration(labelText: 'Premio'),
+                          items: rewardOptions
+                              .map(
+                                (reward) => DropdownMenuItem(
+                                  value: reward.id,
+                                  child: Text(reward.name),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: isIssuing
+                              ? null
+                              : (value) {
+                                  if (value != null) {
+                                    setDialogState(() => rewardId = value);
+                                  }
+                                },
+                        ),
+                        if (errorMessage != null) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            errorMessage!,
+                            style: const TextStyle(color: Color(0xFFE6A296)),
+                          ),
+                        ],
+                      ],
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          color: Colors.white,
+                          padding: const EdgeInsets.all(10),
+                          child: QrImageView(
+                            key: const ValueKey('issued-reward-qr'),
+                            data: payload!,
+                            size: 220,
+                            backgroundColor: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Emitido por ${employee.email ?? employee.uid}. '
+                          'Válido hasta ${_formatCertificateDate(expiresAt!.toLocal())}. '
+                          'Solo se canjea una vez.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: muted, fontSize: 11),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      figure.name,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: cream, fontSize: 10),
-                    ),
-                  ],
+            ),
+            actions: [
+              TextButton(
+                onPressed:
+                    isIssuing ? null : () => Navigator.pop(dialogContext),
+                child: Text(payload == null ? 'CANCELAR' : 'CERRAR'),
+              ),
+              if (payload == null)
+                FilledButton(
+                  key: const ValueKey('issue-reward-qr'),
+                  onPressed: isIssuing
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            isIssuing = true;
+                            errorMessage = null;
+                          });
+                          try {
+                            final issued = await _rewardQrService.issue(
+                              rewardType: rewardType,
+                              rewardId: rewardId,
+                            );
+                            if (!dialogContext.mounted) return;
+                            setDialogState(() {
+                              payload = issued.payload;
+                              expiresAt = issued.expiresAt;
+                            });
+                          } on FirebaseException catch (error) {
+                            debugPrint(
+                              'Firestore rechazó la emisión del QR (${error.code}).',
+                            );
+                            setDialogState(
+                              () => errorMessage = error.message ??
+                                  'No se pudo emitir el QR (${error.code}).',
+                            );
+                          } catch (error, stackTrace) {
+                            debugPrint(
+                                'No se pudo emitir el QR de premio: $error');
+                            debugPrintStack(stackTrace: stackTrace);
+                            setDialogState(
+                              () => errorMessage =
+                                  'No se pudo emitir el QR de premio.',
+                            );
+                          } finally {
+                            if (dialogContext.mounted) {
+                              setDialogState(() => isIssuing = false);
+                            }
+                          }
+                        },
+                  child: isIssuing
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('GENERAR QR'),
                 ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('CERRAR'),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -9640,192 +9981,26 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }
 
   Future<void> _showMemberCardRegistrationDialog() async {
-    final employee = _firebaseUser;
-    if (_debugRoleBypassActive ||
-        employee == null ||
-        !employee.emailVerified ||
-        (!_isStaffRole && _userRole != 'admin')) {
-      _showSnackBar(
-        'Registra Member Cards con una cuenta verificada de barra, caja o gerencia.',
-      );
-      return;
-    }
-
-    final nameController = TextEditingController();
-    final phoneController = TextEditingController();
-    final nationalIdController = TextEditingController();
-    final emailController = TextEditingController();
-    var isSaving = false;
-    String? validationMessage;
-    try {
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (dialogContext, setDialogState) => AlertDialog(
-            backgroundColor: card,
-            title: const Text(
-              'Registrar Member Card',
-              style: TextStyle(color: cream),
-            ),
-            content: SizedBox(
-              width: 420,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Registra los datos del titular. El número se asignará automáticamente. Sus datos quedarán en Firestore y solo Gerencia podrá consultarlos; la Gift Card seguirá siendo anónima.',
-                      style: TextStyle(color: muted, height: 1.4),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      key: const ValueKey('member-card-full-name'),
-                      controller: nameController,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre completo *',
-                        prefixIcon: Icon(Icons.person_outline, color: gold),
-                      ),
-                    ),
-                    TextField(
-                      key: const ValueKey('member-card-phone'),
-                      controller: phoneController,
-                      keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
-                        labelText: 'Teléfono / WhatsApp *',
-                        prefixIcon: Icon(Icons.phone_outlined, color: gold),
-                      ),
-                    ),
-                    TextField(
-                      key: const ValueKey('member-card-national-id'),
-                      controller: nationalIdController,
-                      decoration: const InputDecoration(
-                        labelText: 'CI *',
-                        prefixIcon: Icon(Icons.badge_outlined, color: gold),
-                      ),
-                    ),
-                    TextField(
-                      key: const ValueKey('member-card-email'),
-                      controller: emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'Correo electrónico *',
-                        prefixIcon: Icon(Icons.email_outlined, color: gold),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const TextField(
-                      enabled: false,
-                      decoration: InputDecoration(
-                        labelText: 'Código de tarjeta',
-                        hintText: 'Se asignará al guardar',
-                        prefixIcon:
-                            Icon(Icons.qr_code_2_outlined, color: muted),
-                      ),
-                    ),
-                    if (validationMessage != null) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        validationMessage!,
-                        style: const TextStyle(color: Color(0xFFFFB4A9)),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
-                child: const Text('CANCELAR'),
-              ),
-              FilledButton.icon(
-                onPressed: isSaving
-                    ? null
-                    : () async {
-                        final fullName = nameController.text.trim();
-                        final phone = phoneController.text.trim();
-                        final nationalId = nationalIdController.text.trim();
-                        final email = emailController.text.trim();
-                        final normalizedPhone =
-                            phone.replaceAll(RegExp(r'[\s()\-]'), '');
-                        final validEmail = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-                            .hasMatch(email);
-                        if (fullName.length < 2 ||
-                            normalizedPhone.length < 8 ||
-                            normalizedPhone.length > 16 ||
-                            !RegExp(r'^\+?[0-9]+$').hasMatch(normalizedPhone) ||
-                            nationalId.length < 4 ||
-                            nationalId.length > 32 ||
-                            !validEmail) {
-                          setDialogState(
-                            () => validationMessage =
-                                'Completa nombre, teléfono, CI y correo con datos válidos.',
-                          );
-                          return;
-                        }
-                        setDialogState(() {
-                          isSaving = true;
-                          validationMessage = null;
-                        });
-                        try {
-                          final cardNumber =
-                              await _memberCardService.registerMemberCardHolder(
-                            fullName: fullName,
-                            phone: normalizedPhone,
-                            nationalId: nationalId,
-                            email: email,
-                            createdByUid: employee.uid,
-                          );
-                          if (!dialogContext.mounted) return;
-                          Navigator.pop(dialogContext);
-                          _showBaristaMessage(
-                            'Member Card $cardNumber registrada para $fullName.',
-                          );
-                        } on FirebaseException catch (error, stackTrace) {
-                          debugPrint(
-                            'No se pudo registrar la Member Card (${error.code}).',
-                          );
-                          debugPrintStack(stackTrace: stackTrace);
-                          if (dialogContext.mounted) {
-                            setDialogState(() {
-                              isSaving = false;
-                              validationMessage =
-                                  'No se guardó el registro (${error.code}). Verifica las reglas de Firestore.';
-                            });
-                          }
-                        } catch (error, stackTrace) {
-                          debugPrint(
-                            'Error registrando la Member Card: $error',
-                          );
-                          debugPrintStack(stackTrace: stackTrace);
-                          if (dialogContext.mounted) {
-                            setDialogState(() {
-                              isSaving = false;
-                              validationMessage =
-                                  'No se pudo guardar la tarjeta. Revisa los datos y vuelve a intentarlo.';
-                            });
-                          }
-                        }
-                      },
-                icon: isSaving
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: Text(isSaving ? 'GUARDANDO…' : 'REGISTRAR'),
-              ),
-            ],
-          ),
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: card,
+        title: const Text(
+          'Member Card personalizada',
+          style: TextStyle(color: cream),
         ),
-      );
-    } finally {
-      nameController.dispose();
-      phoneController.dispose();
-      nationalIdController.dispose();
-      emailController.dispose();
-    }
+        content: const Text(
+          'La Member Card se emite desde la cuenta autenticada del cliente para quedar vinculada a su UID. Invítalo a iniciar sesión o crear su cuenta y abrir Perfil > Wolves Member Card. Las Gift Cards sí se generan desde Gerencia.',
+          style: TextStyle(color: muted, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('ENTENDIDO'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showCreateGiftCardDialog() async {
@@ -10356,7 +10531,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 'No se pudo consultar el registro central. Inténtalo nuevamente.',
           );
         }
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState != ConnectionState.done) {
           return Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -13552,6 +13727,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       (sum, item) =>
           sum + (item['price'] as num).toDouble() * (item['qty'] as int),
     );
+    final isMemberCardSale = cart.any((item) => item['membershipCard'] == true);
     final amountReceived = _selectedPaymentMethod == 'cash'
         ? double.tryParse(_posPaymentReceivedController.text.trim()) ?? 0
         : 0.0;
@@ -14253,17 +14429,35 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   ],
                 ],
                 const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  key: const ValueKey('pos-add-member-card'),
+                  onPressed: _isRecordingSale || cart.isNotEmpty
+                      ? null
+                      : _addMemberCardToPosCart,
+                  icon: const Icon(Icons.add_card),
+                  label: const Text('VENDER MEMBER CARD'),
+                ),
+                const SizedBox(height: 10),
                 TextField(
                   key: const ValueKey('pos-customer-member-id'),
                   controller: _posCustomerUidController,
                   decoration: InputDecoration(
-                    labelText: _selectedPaymentMethod == 'wallet'
-                        ? 'UID / Wolves Member Card'
-                        : 'ID de miembro (opcional)',
+                    labelText: isMemberCardSale
+                        ? 'Correo o username del comprador'
+                        : _selectedPaymentMethod == 'wallet'
+                            ? 'UID / Wolves Member Card'
+                            : 'ID de miembro (opcional)',
                     prefixIcon: Icon(Icons.badge_outlined, color: gold),
                   ),
                   onChanged: (value) => _customerUidForSale = value,
                 ),
+                if (isMemberCardSale) ...[
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Se enviará una solicitud a Gerencia para vincular y emitir la tarjeta después del cobro.',
+                    style: TextStyle(color: muted, fontSize: 10, height: 1.4),
+                  ),
+                ],
                 if (_selectedPaymentMethod == 'wallet') ...[
                   const SizedBox(height: 6),
                   const Text(
@@ -14456,10 +14650,22 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         if (!cash.exists) {
                           return OutlinedButton.icon(
                             key: const ValueKey('open-cash-session'),
-                            onPressed: () =>
-                                unawaited(_openCashForShift(shift)),
-                            icon: const Icon(Icons.point_of_sale),
-                            label: const Text('ABRIR CAJA'),
+                            onPressed: _isOpeningCash
+                                ? null
+                                : () => _openCashForShift(shift),
+                            icon: _isOpeningCash
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: gold,
+                                    ),
+                                  )
+                                : const Icon(Icons.point_of_sale),
+                            label: Text(
+                              _isOpeningCash ? 'ABRIENDO CAJA…' : 'ABRIR CAJA',
+                            ),
                           );
                         }
                         if (cash.data()?['status'] == 'open') {
@@ -14812,11 +15018,25 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Escanea primero el QR Wolves Member Card del usuario y luego el QR '
-            'de la figura Cold Brew para registrar el canje en su álbum.',
+            'Emite un QR temporal para un premio. El cliente puede escanearlo '
+            'desde su app, o puedes escanear su Member Card y aplicar ese QR '
+            'desde el TPV. Cada código registra emisor y beneficiario y solo '
+            'se acepta una vez.',
             style: TextStyle(color: muted, fontSize: 11, height: 1.4),
           ),
           const SizedBox(height: 9),
+          OutlinedButton.icon(
+            key: const ValueKey('issue-reward-qr-open'),
+            onPressed: _showIssueRewardQrDialog,
+            icon: const Icon(Icons.qr_code_2),
+            label: const Text('EMITIR QR ÚNICO DE PREMIO'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: cream,
+              side: BorderSide(color: gold.withValues(alpha: 0.55)),
+              minimumSize: const Size.fromHeight(44),
+            ),
+          ),
+          const SizedBox(height: 7),
           FilledButton.icon(
             key: const ValueKey('scan-cold-brew-redemption'),
             onPressed:
@@ -14830,24 +15050,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             label: Text(
               _isProcessingBaristaCanje
                   ? 'REGISTRANDO CANJE…'
-                  : 'ESCANEAR QR DE USUARIO Y FIGURA',
+                  : 'ESCANEAR MEMBER CARD Y QR DE PREMIO',
             ),
             style: FilledButton.styleFrom(
               backgroundColor: gold,
               foregroundColor: bg,
               minimumSize: const Size.fromHeight(46),
-            ),
-          ),
-          const SizedBox(height: 7),
-          OutlinedButton.icon(
-            key: const ValueKey('show-cold-brew-figure-qrs'),
-            onPressed: _showColdBrewFigureQrs,
-            icon: const Icon(Icons.qr_code_2),
-            label: const Text('VER QR DE LAS 16 FIGURITAS'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: cream,
-              side: BorderSide(color: gold.withValues(alpha: 0.55)),
-              minimumSize: const Size.fromHeight(42),
             ),
           ),
           const Divider(color: Color(0xFF39312A), height: 20),
@@ -14978,7 +15186,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           key: const ValueKey('register-member-card-holder'),
           onPressed: _showMemberCardRegistrationDialog,
           icon: const Icon(Icons.credit_card_outlined),
-          label: const Text('MEMBER CARD'),
+          label: const Text('MEMBER CARD PERSONALIZADA'),
           style: OutlinedButton.styleFrom(
             foregroundColor: gold,
             side: BorderSide(color: gold.withValues(alpha: 0.65)),
@@ -17293,6 +17501,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _adminMemberCardsSection(),
+            const SizedBox(height: 16),
             _adminCustomerRewardsSection(),
           ],
         );
@@ -17339,6 +17549,35 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           style: TextStyle(color: muted, fontSize: 12, height: 1.5),
         ),
         const SizedBox(height: 20),
+        Card(
+          color: const Color(0xFF211C15),
+          child: ListTile(
+            key: const ValueKey('admin-member-card-quick-access'),
+            leading: const WolvesIcon(icon: Icons.add_card, color: gold),
+            title: const Text(
+              'EMITIR MEMBER CARD',
+              style: TextStyle(
+                color: gold,
+                fontSize: 12,
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            subtitle: const Text(
+              'Vincula una tarjeta comprada con la cuenta Wolves Club del cliente.',
+              style: TextStyle(color: muted, fontSize: 11),
+            ),
+            trailing: const Icon(
+              Icons.arrow_forward_ios,
+              color: gold,
+              size: 15,
+            ),
+            onTap: () => setState(() {
+              _selectedAdminWorkspaceSection = 'customers';
+            }),
+          ),
+        ),
+        const SizedBox(height: 8),
         LayoutBuilder(
           builder: (context, constraints) {
             final columns = constraints.maxWidth >= 900
@@ -17697,7 +17936,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             ),
             const SizedBox(height: 8),
             const Text(
-              'La cuenta y sus preferencias personales son independientes de la configuración global del negocio. La sesión privada se bloquea automáticamente tras 2 minutos sin actividad.',
+              'La cuenta y sus preferencias personales son independientes de la configuración global del negocio. La sesión privada se bloquea automáticamente tras 10 minutos sin actividad.',
               style: TextStyle(color: muted, fontSize: 11, height: 1.5),
             ),
           ],
@@ -21070,7 +21309,6 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _adminPassportRewardStatsSection(),
-                _adminMemberCardsSection(),
                 const Text(
                   'ÁLBUM COLD BREW',
                   style: TextStyle(color: gold, fontSize: 10),
@@ -21264,79 +21502,765 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     );
   }
 
-  Widget _adminMemberCardsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Divider(color: brownDark),
-        const Text(
-          'MEMBER CARDS',
-          style: TextStyle(color: gold, fontSize: 10),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Tarjetas registradas por el personal y tarjetas digitales de clientes.',
-          style: TextStyle(color: muted, fontSize: 9),
-        ),
-        const SizedBox(height: 8),
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection('member_cards')
-              .orderBy('createdAt', descending: true)
-              .limit(100)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return _managementStatusCard(
-                'No se pudieron cargar las Member Cards registradas.',
-                error: true,
-              );
-            }
-            if (!snapshot.hasData) {
-              return const LinearProgressIndicator(color: gold);
-            }
-            final cards = snapshot.data!.docs;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'REGISTRADAS EN TIENDA · ${cards.length}',
-                  style: const TextStyle(color: cream2, fontSize: 9),
-                ),
-                if (cards.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      'No hay Member Cards registradas por el personal.',
-                      style: TextStyle(color: muted, fontSize: 9),
+  Future<void> _showIssuePaidMemberCardDialog({
+    String? requestId,
+    String? initialLookup,
+  }) async {
+    final manager = _firebaseUser;
+    if (_debugRoleBypassActive ||
+        _userRole != 'admin' ||
+        manager == null ||
+        !manager.emailVerified) {
+      _showBaristaMessage(
+        'Solo Gerencia con sesión verificada puede emitir Member Cards compradas.',
+      );
+      return;
+    }
+
+    final accountController = TextEditingController(text: initialLookup ?? '');
+    final purchaseController = TextEditingController();
+    var isSaving = false;
+    String? validationMessage;
+    String? issuedMemberName;
+    try {
+      final cardNumber = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            backgroundColor: card,
+            title: const Text(
+              'Emitir Member Card comprada',
+              style: TextStyle(color: cream),
+            ),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Busca la cuenta Wolves Club existente del comprador por correo o username. La tarjeta se asignará a su UID y no se emitirá al crear la cuenta.',
+                    style: TextStyle(color: muted, height: 1.45),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    key: const ValueKey('member-card-account-search'),
+                    controller: accountController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Correo o username del cliente',
+                      prefixIcon:
+                          Icon(Icons.person_search_outlined, color: gold),
                     ),
-                  )
-                else
-                  ...cards.map((document) {
-                    final data = document.data();
-                    final createdAt = data['createdAt'];
-                    final dateLabel = createdAt is Timestamp
-                        ? _formatManagementTime(createdAt.toDate())
-                        : 'Fecha pendiente';
-                    return ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        '${data['fullName'] ?? 'Titular'} · '
-                        '${data['memberCardNumber'] ?? document.id}',
-                        style: const TextStyle(color: cream, fontSize: 10),
-                      ),
-                      subtitle: Text(
-                        '${data['email'] ?? '-'} · ${data['phone'] ?? '-'} · $dateLabel',
-                        style: const TextStyle(color: muted, fontSize: 9),
-                      ),
-                    );
-                  }),
-              ],
-            );
-          },
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    key: const ValueKey('member-card-purchase-reference'),
+                    controller: purchaseController,
+                    decoration: const InputDecoration(
+                      labelText: 'Referencia de compra (opcional)',
+                      prefixIcon:
+                          Icon(Icons.receipt_long_outlined, color: gold),
+                    ),
+                  ),
+                  if (validationMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      validationMessage!,
+                      style: const TextStyle(color: Color(0xFFFFB4A9)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('CANCELAR'),
+              ),
+              FilledButton.icon(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        final query = accountController.text.trim();
+                        if (query.isEmpty) {
+                          setDialogState(
+                            () => validationMessage =
+                                'Ingresa el correo o username de la cuenta.',
+                          );
+                          return;
+                        }
+                        setDialogState(() {
+                          isSaving = true;
+                          validationMessage = null;
+                        });
+                        try {
+                          DocumentSnapshot<Map<String, dynamic>>? profile;
+                          if (query.contains('@')) {
+                            final matches = await FirebaseFirestore.instance
+                                .collection('users')
+                                .where('email', isEqualTo: query.toLowerCase())
+                                .limit(2)
+                                .get();
+                            if (matches.docs.length == 1) {
+                              profile = matches.docs.single;
+                            } else if (matches.docs.length > 1) {
+                              throw StateError(
+                                'El correo coincide con más de una cuenta. Usa el username.',
+                              );
+                            }
+                          } else {
+                            final username = await FirebaseFirestore.instance
+                                .collection('usernameRegistry')
+                                .doc(query.toLowerCase())
+                                .get();
+                            final uid = username.data()?['uid'];
+                            if (uid is String && uid.isNotEmpty) {
+                              profile = await FirebaseFirestore.instance
+                                  .collection('users')
+                                  .doc(uid)
+                                  .get();
+                            }
+                          }
+                          if (profile == null || !profile.exists) {
+                            throw StateError(
+                              'No encontramos una cuenta con ese correo o username.',
+                            );
+                          }
+                          final data = profile.data()!;
+                          if (data['role'] != 'user') {
+                            throw StateError(
+                              'La Member Card comprada debe vincularse a una cuenta de cliente.',
+                            );
+                          }
+                          final firstName = data['firstName'] as String? ?? '';
+                          final lastName = data['lastName'] as String? ?? '';
+                          final displayName =
+                              data['displayName'] as String? ?? '';
+                          final memberName =
+                              '$firstName $lastName'.trim().isNotEmpty
+                                  ? '$firstName $lastName'.trim()
+                                  : displayName.trim().isNotEmpty
+                                      ? displayName.trim()
+                                      : (data['username'] as String? ??
+                                          data['email'] as String? ??
+                                          'Miembro Wolves Club');
+                          final issuedCardNumber =
+                              await _memberCardService.issuePaidMemberCard(
+                            userUid: profile.id,
+                            memberName: memberName,
+                            issuedByUid: manager.uid,
+                            purchaseReference: purchaseController.text,
+                            requestId: requestId,
+                          );
+                          if (!dialogContext.mounted) return;
+                          issuedMemberName = memberName;
+                          Navigator.pop(dialogContext, issuedCardNumber);
+                        } on FirebaseException catch (error, stackTrace) {
+                          debugPrint(
+                            'No se pudo emitir la Member Card (${error.code}).',
+                          );
+                          debugPrintStack(stackTrace: stackTrace);
+                          if (dialogContext.mounted) {
+                            setDialogState(() {
+                              isSaving = false;
+                              validationMessage =
+                                  'Firestore rechazó la emisión (${error.code}): ${error.message ?? 'sin detalle adicional'}';
+                            });
+                          }
+                        } catch (error, stackTrace) {
+                          debugPrint(
+                              'No se pudo emitir la Member Card: $error');
+                          debugPrintStack(stackTrace: stackTrace);
+                          if (dialogContext.mounted) {
+                            setDialogState(() {
+                              isSaving = false;
+                              validationMessage = error
+                                  .toString()
+                                  .replaceFirst('Bad state: ', '');
+                            });
+                          }
+                        }
+                      },
+                icon: isSaving
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.credit_card),
+                label: Text(isSaving ? 'EMITIENDO…' : 'EMITIR TARJETA'),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
+      );
+      if (cardNumber != null && mounted) {
+        await _showIssuedMemberCard(
+          memberName: issuedMemberName ?? 'Miembro Wolves Club',
+          memberCardNumber: cardNumber,
+          requestId: requestId,
+        );
+      }
+    } finally {
+      accountController.dispose();
+      purchaseController.dispose();
+    }
+  }
+
+  Future<void> _verifyMemberCardRequest(
+    QueryDocumentSnapshot<Map<String, dynamic>> request,
+  ) async {
+    final manager = _firebaseUser;
+    if (manager == null || _userRole != 'admin' || !manager.emailVerified) {
+      _showBaristaMessage(
+          'La verificación del pago está reservada a Gerencia.');
+      return;
+    }
+    final data = request.data();
+    final paymentOrderId = data['paymentOrderId'];
+    if (paymentOrderId is! String || paymentOrderId.isEmpty) {
+      _showSnackBar('La solicitud no contiene un ID de orden de pago válido.');
+      return;
+    }
+    try {
+      final payment =
+          await _paymentApiService.getOrderPaymentStatus(paymentOrderId);
+      if (payment.status != 'paid') {
+        _showSnackBar(
+          payment.status == 'pending'
+              ? 'El proveedor todavía muestra el pago pendiente.'
+              : 'La orden de pago figura como ${payment.status}; no se habilitó la emisión.',
+        );
+        return;
+      }
+      final requestedAmount = data['amount'];
+      if (requestedAmount is! num ||
+          payment.amount != requestedAmount.toDouble()) {
+        _showSnackBar(
+          'El importe de la orden QR no coincide con el precio vigente. No se habilitó la emisión.',
+        );
+        return;
+      }
+      await _memberCardRequestService.confirmQrPayment(
+        requestId: request.id,
+        managerUid: manager.uid,
+      );
+      if (mounted) {
+        _showSnackBar(
+          'Pago confirmado. La solicitud ya está lista para emitir.',
+        );
+      }
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint(
+          'No se pudo confirmar la solicitud ${request.id}: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        _showSnackBar('No se pudo guardar la confirmación (${error.code}).');
+      }
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo verificar el pago ${request.id}: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        _showSnackBar(
+          error is PaymentApiException
+              ? error.message
+              : 'No se pudo verificar el pago con la pasarela.',
+        );
+      }
+    }
+  }
+
+  Future<void> _issueMemberCardRequest(
+    QueryDocumentSnapshot<Map<String, dynamic>> request,
+  ) async {
+    final data = request.data();
+    final userUid = data['userUid'];
+    if (userUid is! String || userUid.isEmpty) {
+      final buyerLookup = data['buyerLookup'];
+      if (buyerLookup is! String || buyerLookup.isEmpty) {
+        _showSnackBar('La solicitud de caja no tiene correo o username.');
+        return;
+      }
+      await _showIssuePaidMemberCardDialog(
+        requestId: request.id,
+        initialLookup: buyerLookup,
+      );
+      return;
+    }
+    final manager = _firebaseUser;
+    if (manager == null || _userRole != 'admin') {
+      _showBaristaMessage('Solo Gerencia puede emitir esta Member Card.');
+      return;
+    }
+    try {
+      final profile = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userUid)
+          .get();
+      if (!profile.exists || profile.data()?['role'] != 'user') {
+        throw StateError(
+          'No se encontró una cuenta de cliente válida para la solicitud.',
+        );
+      }
+      final profileData = profile.data()!;
+      final nameParts = [
+        profileData['firstName'] as String? ?? '',
+        profileData['lastName'] as String? ?? '',
+      ].where((part) => part.trim().isNotEmpty).toList();
+      final memberName = nameParts.join(' ').trim().isNotEmpty
+          ? nameParts.join(' ').trim()
+          : (profileData['displayName'] as String? ??
+                  profileData['username'] as String? ??
+                  data['fullName'] as String? ??
+                  'Miembro Wolves Club')
+              .trim();
+      final cardNumber = await _memberCardService.issuePaidMemberCard(
+        userUid: userUid,
+        memberName: memberName,
+        issuedByUid: manager.uid,
+        purchaseReference: data['paymentOrderId'] as String? ?? request.id,
+        requestId: request.id,
+      );
+      if (!mounted) return;
+      await _showIssuedMemberCard(
+        memberName: memberName,
+        memberCardNumber: cardNumber,
+        requestId: request.id,
+      );
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo emitir la solicitud ${request.id}: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        _showSnackBar('Firestore rechazó la emisión (${error.code}).');
+      }
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo emitir la solicitud ${request.id}: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        _showSnackBar(
+          error is StateError
+              ? error.message
+              : 'No se pudo emitir la Member Card solicitada.',
+        );
+      }
+    }
+  }
+
+  Future<void> _showIssuedMemberCard({
+    required String memberName,
+    required String memberCardNumber,
+    String? requestId,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: card,
+        title: const Text(
+          'Member Card emitida',
+          style: TextStyle(color: cream),
+        ),
+        content: SizedBox(
+          width: 480,
+          child: WolvesMembershipCard(
+            memberName: memberName,
+            memberId: memberCardNumber,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('CERRAR'),
+          ),
+          FilledButton.icon(
+            key: const ValueKey('print-member-card-pvc'),
+            onPressed: () async {
+              try {
+                final printed = await MemberCardPrintService.printCard(
+                  memberName: memberName,
+                  memberId: memberCardNumber,
+                );
+                if (printed && requestId != null) {
+                  await _memberCardService.markMemberCardRequestReadyAtPos(
+                    requestId: requestId,
+                    memberCardNumber: memberCardNumber,
+                    managerUid: _firebaseUser!.uid,
+                  );
+                }
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                if (mounted) {
+                  _showSnackBar(
+                    printed
+                        ? 'Tarjeta preparada para imprimir y enviar al TPV.'
+                        : 'Se canceló la impresión. Puedes volver a intentarlo desde la solicitud.',
+                  );
+                }
+              } on FirebaseException catch (error, stackTrace) {
+                debugPrint(
+                    'No se pudo actualizar el estado impreso: ${error.code}');
+                debugPrintStack(stackTrace: stackTrace);
+                if (mounted) {
+                  _showSnackBar(
+                    'Se generó la tarjeta, pero no se actualizó el estado (${error.code}).',
+                  );
+                }
+              } catch (error, stackTrace) {
+                debugPrint('No se pudo preparar la impresión PVC: $error');
+                debugPrintStack(stackTrace: stackTrace);
+                if (mounted) {
+                  _showSnackBar(
+                    'No se pudo preparar la tarjeta para imprimir.',
+                  );
+                }
+              }
+            },
+            icon: const Icon(Icons.print_outlined),
+            label: const Text('IMPRIMIR / ENVIAR A TPV'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveMemberCardPrice() async {
+    final manager = _firebaseUser;
+    final price = double.tryParse(
+        _memberCardPriceController.text.trim().replaceAll(',', '.'));
+    if (manager == null ||
+        _userRole != 'admin' ||
+        _debugRoleBypassActive ||
+        !manager.emailVerified) {
+      _showBaristaMessage('Solo Gerencia verificada puede cambiar el precio.');
+      return;
+    }
+    if (price == null || !price.isFinite || price <= 0) {
+      _showSnackBar('Ingresa un precio mayor a cero en bolivianos.');
+      return;
+    }
+    try {
+      await _memberCardRequestService.setPrice(
+        price: price,
+        managerUid: manager.uid,
+      );
+      if (mounted) _showSnackBar('Precio de Member Card actualizado.');
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo guardar el precio de Member Card: ${error.code}');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        _showSnackBar('No se pudo guardar el precio (${error.code}).');
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Error guardando el precio de Member Card: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) _showSnackBar('No se pudo guardar el precio.');
+    }
+  }
+
+  Widget _adminMemberCardPriceSection() {
+    if (_debugRoleBypassActive) {
+      return const Text(
+        'El precio real de Member Card solo se configura desde una sesión verificada de Gerencia.',
+        style: TextStyle(color: muted, fontSize: 10),
+      );
+    }
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('memberCardSettings')
+          .doc(MemberCardRequestService.settingsDocumentId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _managementStatusCard(
+            'No se pudo cargar el precio de Member Card.',
+            error: true,
+          );
+        }
+        final data = snapshot.data?.data();
+        final currentPrice = data?['price'];
+        if (currentPrice is num &&
+            !FocusScope.of(context).hasFocus &&
+            _memberCardPriceController.text.isEmpty) {
+          _memberCardPriceController.text = currentPrice.toString();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              key: const ValueKey('member-card-price'),
+              controller: _memberCardPriceController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Precio de la Member Card',
+                prefixText: 'Bs ',
+                helperText: currentPrice is num
+                    ? 'Precio actual: ${_formatPrice(currentPrice.toDouble())}'
+                    : 'Configura el precio para habilitar la compra por QR y en caja.',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                key: const ValueKey('save-member-card-price'),
+                onPressed: _saveMemberCardPrice,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('GUARDAR PRECIO'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _adminMemberCardRequestsSection() {
+    if (_debugRoleBypassActive) {
+      return _adminDemoDataSection(
+        icon: Icons.inbox_outlined,
+        title: 'SOLICITUDES DE MEMBER CARD · DEMO',
+        rows: const [
+          ListTile(
+            dense: true,
+            title: Text(
+              'Las solicitudes reales aparecen con una sesión verificada de Gerencia.',
+              style: TextStyle(color: cream),
+            ),
+          ),
+        ],
+      );
+    }
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('memberCardRequests')
+          .orderBy('createdAt', descending: true)
+          .limit(100)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _managementStatusCard(
+            'No se pudieron cargar las solicitudes de Member Card.',
+            error: true,
+          );
+        }
+        if (!snapshot.hasData) {
+          return const LinearProgressIndicator(color: gold);
+        }
+        final requests = snapshot.data!.docs;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 14),
+            Text(
+              'SOLICITUDES · ${requests.length}',
+              style: const TextStyle(color: gold, fontSize: 10),
+            ),
+            if (requests.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Text(
+                  'Aún no hay solicitudes de compra ni ventas de caja.',
+                  style: TextStyle(color: muted, fontSize: 10),
+                ),
+              )
+            else
+              ...requests.map((request) {
+                final data = request.data();
+                final status = data['status'] as String? ?? 'unknown';
+                final createdAt = data['createdAt'];
+                final deliveryDueAt = data['deliveryDueAt'];
+                final memberCardNumber = data['memberCardNumber'];
+                final buyerName =
+                    data['fullName'] as String? ?? 'Comprador sin nombre';
+                final statusLabel = switch (status) {
+                  'awaiting_payment' => 'Esperando pago QR',
+                  'payment_reported' => 'Pago reportado · verificar',
+                  'payment_confirmed' => 'Pago confirmado · emitir',
+                  'issued_pending_print' =>
+                    'Emitida · imprimir y enviar al TPV',
+                  'ready_at_pos' => 'Enviada al TPV',
+                  'payment_failed' => 'Pago fallido o QR vencido',
+                  _ => 'Estado $status',
+                };
+                final action = switch (status) {
+                  'awaiting_payment' || 'payment_reported' => OutlinedButton(
+                      onPressed: () => _verifyMemberCardRequest(request),
+                      child: const Text('VERIFICAR PAGO'),
+                    ),
+                  'payment_confirmed' => FilledButton(
+                      onPressed: () => _issueMemberCardRequest(request),
+                      child: const Text('EMITIR TARJETA'),
+                    ),
+                  'issued_pending_print' => OutlinedButton.icon(
+                      onPressed: memberCardNumber is String
+                          ? () => _showIssuedMemberCard(
+                                memberName: buyerName,
+                                memberCardNumber: memberCardNumber,
+                                requestId: request.id,
+                              )
+                          : null,
+                      icon: const Icon(Icons.print_outlined),
+                      label: const Text('IMPRIMIR / ENVIAR A TPV'),
+                    ),
+                  _ => const SizedBox.shrink(),
+                };
+                return Card(
+                  key: ValueKey('member-card-request-${request.id}'),
+                  color: card2,
+                  margin: const EdgeInsets.only(top: 8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          buyerName,
+                          style: const TextStyle(color: cream, fontSize: 11),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${data['source'] == 'pos' ? 'CAJA' : 'QR ONLINE'} · '
+                          '${_formatPrice((data['amount'] as num?)?.toDouble() ?? 0)} · '
+                          '$statusLabel',
+                          style: const TextStyle(color: muted, fontSize: 9),
+                        ),
+                        if (data['buyerLookup'] is String)
+                          Text(
+                            'Cuenta para vincular: ${data['buyerLookup']}',
+                            style: const TextStyle(color: cream2, fontSize: 9),
+                          ),
+                        if (data['paymentOrderId'] is String)
+                          Text(
+                            'Orden ${data['paymentOrderId']}',
+                            style: const TextStyle(color: cream2, fontSize: 9),
+                          ),
+                        if (createdAt is Timestamp ||
+                            deliveryDueAt is Timestamp)
+                          Text(
+                            'Solicitud: ${createdAt is Timestamp ? _formatManagementTime(createdAt.toDate()) : 'Ahora'} · '
+                            'Entrega estimada: ${deliveryDueAt is Timestamp ? _formatManagementTime(deliveryDueAt.toDate()) : '7 días'}',
+                            style: const TextStyle(color: muted, fontSize: 9),
+                          ),
+                        if (action is! SizedBox)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: action,
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _adminMemberCardsSection() {
+    return Card(
+      color: card,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'EMISIÓN DE MEMBER CARDS',
+              style: TextStyle(color: gold, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Define el precio, revisa solicitudes de compra QR o ventas de caja, confirma el pago y emite la tarjeta para impresión y envío al TPV.',
+              style: TextStyle(color: muted, fontSize: 11, height: 1.45),
+            ),
+            const SizedBox(height: 12),
+            _adminMemberCardPriceSection(),
+            _adminMemberCardRequestsSection(),
+            const SizedBox(height: 12),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                key: const ValueKey('issue-paid-member-card'),
+                onPressed: _showIssuePaidMemberCardDialog,
+                icon: const Icon(Icons.add_card),
+                label: const Text('EMITIR MEMBER CARD'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: gold,
+                  foregroundColor: bg,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('wolves_member_card')
+                  .orderBy('createdAt', descending: true)
+                  .limit(100)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return _managementStatusCard(
+                    'No se pudieron cargar las Member Cards vendidas.',
+                    error: true,
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const LinearProgressIndicator(color: gold);
+                }
+                final cards = snapshot.data!.docs;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'MEMBER CARDS VENDIDAS · ${cards.length}',
+                      style: const TextStyle(color: cream2, fontSize: 9),
+                    ),
+                    if (cards.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'Todavía no se emitieron tarjetas compradas.',
+                          style: TextStyle(color: muted, fontSize: 9),
+                        ),
+                      )
+                    else
+                      ...cards.map((document) {
+                        final data = document.data();
+                        final createdAt = data['createdAt'];
+                        final dateLabel = createdAt is Timestamp
+                            ? _formatManagementTime(createdAt.toDate())
+                            : 'Fecha pendiente';
+                        return ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            '${data['fullName'] ?? 'Titular'} · '
+                            '${data['memberCardNumber'] ?? document.id}',
+                            style: const TextStyle(color: cream, fontSize: 10),
+                          ),
+                          subtitle: Text(
+                            'UID ${data['userUid'] ?? document.id} · '
+                            'Estado ${data['status'] ?? 'pendiente'} · '
+                            '${data['purchaseReference'] ?? 'Sin referencia'} · $dateLabel',
+                            style: const TextStyle(color: muted, fontSize: 9),
+                          ),
+                        );
+                      }),
+                  ],
+                );
+              },
+            ),
+            _adminLegacyMemberCardsSection(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _adminLegacyMemberCardsSection() {
+    return Column(
+      children: [
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance
               .collection('memberCards')
@@ -22406,25 +23330,42 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   final rewardType = data['rewardType'] is String
                       ? data['rewardType'] as String
                       : 'Canje';
-                  final rewardId = data['rewardId'] is String
-                      ? data['rewardId'] as String
-                      : '';
+                  final rewardLabel = switch (rewardType) {
+                    'coldBrewStamp' => 'Cold Brew',
+                    'passportMethod' => 'Coffee Passport',
+                    _ => rewardType,
+                  };
+                  final rewardId = data['figureId'] is String
+                      ? data['figureId'] as String
+                      : data['methodName'] is String
+                          ? data['methodName'] as String
+                          : data['rewardId'] is String
+                              ? data['rewardId'] as String
+                              : '';
                   final customerUid = data['customerUid'] is String
                       ? data['customerUid'] as String
                       : '';
-                  final employeeEmail = data['employeeEmail'] is String
-                      ? data['employeeEmail'] as String
-                      : data['employeeUid'] as String? ?? '';
+                  final receiverUid = data['receiverUid'] is String
+                      ? data['receiverUid'] as String
+                      : customerUid;
+                  final issuer = data['issuerEmail'] is String
+                      ? data['issuerEmail'] as String
+                      : data['employeeEmail'] is String
+                          ? data['employeeEmail'] as String
+                          : data['issuerUid'] is String
+                              ? data['issuerUid'] as String
+                              : data['employeeUid'] as String? ?? '';
                   return ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.verified, color: gold, size: 19),
                     title: Text(
-                      '$rewardType · $rewardId',
+                      '$rewardLabel · $rewardId',
                       style: const TextStyle(color: white, fontSize: 12),
                     ),
                     subtitle: Text(
-                      'Cliente $customerUid\n$employeeEmail · $dateLabel',
+                      'Recibió: ${receiverUid.isEmpty ? 'Cliente desconocido' : receiverUid}\n'
+                      'Emitió: ${issuer.isEmpty ? 'Personal desconocido' : issuer} · $dateLabel',
                       style: const TextStyle(color: muted, fontSize: 10),
                     ),
                   );
@@ -25173,6 +26114,22 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               valueColor: const AlwaysStoppedAnimation(cream),
             ),
           ),
+          if (_firebaseUser != null && _userRole == 'user') ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('scan-passport-reward'),
+                onPressed: _openCustomerRewardQrScanner,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('ESCANEAR PREMIO O PASSPORT'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: gold,
+                  foregroundColor: bg,
+                ),
+              ),
+            ),
+          ],
           if (completed < methods.length) ...[
             const SizedBox(height: 14),
             Align(
@@ -29643,6 +30600,19 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             backButton: true,
             menuButton: false,
           ),
+          if (_firebaseUser != null && _userRole == 'user') ...[
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              key: const ValueKey('scan-cold-brew-reward'),
+              onPressed: _openCustomerRewardQrScanner,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('ESCANEAR PREMIO COLD BREW'),
+              style: FilledButton.styleFrom(
+                backgroundColor: gold,
+                foregroundColor: bg,
+              ),
+            ),
+          ],
           const SizedBox(height: 18),
           Container(
             padding: const EdgeInsets.all(20),
@@ -29827,13 +30797,228 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     );
   }
 
-  Future<String> _memberCardNumberFor(User user) {
+  Future<String?> _memberCardNumberFor(User user) {
     if (_memberCardNumberUid != user.uid || _memberCardNumberFuture == null) {
       _memberCardNumberUid = user.uid;
       _memberCardNumberFuture =
-          _memberCardService.getOrCreateCardNumber(user.uid);
+          _memberCardService.getPaidMemberCardNumber(user.uid);
     }
     return _memberCardNumberFuture!;
+  }
+
+  Future<void> _startMemberCardQrPurchase(User member, double price) async {
+    if (!_paymentApiService.isConfigured) {
+      _showSnackBar(
+        'La compra QR no está disponible. Gerencia debe configurar la pasarela de pago.',
+      );
+      return;
+    }
+    final idempotencyKey = _newPaymentIdempotencyKey();
+    final requestMemberName = userName.trim().isNotEmpty
+        ? userName.trim()
+        : member.displayName?.trim().isNotEmpty == true
+            ? member.displayName!.trim()
+            : member.email ?? 'Miembro Wolves Club';
+    try {
+      final order = await _paymentApiService.createOrder(
+        total: price,
+        items: [
+          {
+            'productId': MemberCardRequestService.qrProductId,
+            'name': MemberCardRequestService.qrProductName,
+            'unitPrice': price,
+            'quantity': 1,
+          },
+        ],
+        idempotencyKey: idempotencyKey,
+      );
+      if (order.amount != price) {
+        throw const FormatException(
+          'El importe de la orden QR no coincide con el precio de la Member Card.',
+        );
+      }
+      if (!const {'pending', 'paid'}.contains(order.status)) {
+        throw StateError('La pasarela no aprobó la orden QR.');
+      }
+      await _memberCardRequestService.createQrRequest(
+        userUid: member.uid,
+        fullName: requestMemberName,
+        paymentOrderId: order.id,
+        amount: order.amount,
+      );
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => MemberCardQrPaymentDialog(
+          order: order,
+          requestId: order.id,
+          userUid: member.uid,
+          paymentApi: _paymentApiService,
+          requestService: _memberCardRequestService,
+        ),
+      );
+      if (confirmed == true && mounted) {
+        _showSnackBar(
+          'Solicitud enviada a Gerencia. Tu tarjeta llegará al TPV en un plazo de 7 días tras verificar el pago.',
+        );
+      }
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint(
+        'No se pudo registrar la solicitud de Member Card (${error.code}).',
+      );
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        _showSnackBar(
+          'No se pudo registrar la solicitud (${error.code}). No realices el pago hasta intentarlo de nuevo.',
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo iniciar la compra QR de Member Card: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        final message = error is StateError || error is FormatException
+            ? error.toString().replaceFirst('Bad state: ', '')
+            : 'No se pudo iniciar la compra QR. Inténtalo nuevamente.';
+        _showSnackBar(message);
+      }
+    }
+  }
+
+  Widget _memberCardPurchaseSection(User member) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('memberCardRequests')
+          .where('userUid', isEqualTo: member.uid)
+          .snapshots(),
+      builder: (context, requestsSnapshot) {
+        if (requestsSnapshot.hasError) {
+          return const Text(
+            'No se pudo consultar el estado de tu solicitud.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Color(0xFFFFB4A9), fontSize: 11),
+          );
+        }
+        final requests = requestsSnapshot.data?.docs ?? const [];
+        final activeRequest = requests.where((request) {
+          return const {
+            'awaiting_payment',
+            'payment_reported',
+            'payment_confirmed',
+            'issued_pending_print',
+            'ready_at_pos',
+          }.contains(request.data()['status']);
+        }).toList()
+          ..sort((first, second) {
+            final firstDate = first.data()['createdAt'];
+            final secondDate = second.data()['createdAt'];
+            if (firstDate is! Timestamp || secondDate is! Timestamp) return 0;
+            return secondDate.compareTo(firstDate);
+          });
+
+        if (activeRequest.isNotEmpty) {
+          final request = activeRequest.first.data();
+          final status = request['status'];
+          final message = switch (status) {
+            'awaiting_payment' =>
+              'Solicitud iniciada. Completa el pago QR; Gerencia confirmará la orden antes de emitir tu tarjeta.',
+            'payment_reported' =>
+              'Pago reportado. Gerencia está verificando la orden. Tras la confirmación, tu tarjeta será enviada al TPV en un plazo de 7 días.',
+            'payment_confirmed' =>
+              '¡Solicitud recibida! Gerencia emitirá tu tarjeta y la enviará al TPV para entrega en un plazo de 7 días.',
+            'issued_pending_print' =>
+              'Tu tarjeta ya fue emitida y está preparándose para impresión y envío al TPV.',
+            'ready_at_pos' =>
+              'Tu tarjeta fue enviada al TPV. Puedes recogerla allí.',
+            _ => 'Tu solicitud de Member Card está en proceso.',
+          };
+          return Column(
+            children: [
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: cream2,
+                  fontSize: 11,
+                  height: 1.45,
+                ),
+              ),
+              if (request['amount'] is num) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Importe: ${_formatPrice((request['amount'] as num).toDouble())}',
+                  style: const TextStyle(color: muted, fontSize: 10),
+                ),
+              ],
+              if (status == 'ready_at_pos')
+                TextButton.icon(
+                  onPressed: () => setState(() {
+                    _memberCardNumberUid = null;
+                    _memberCardNumberFuture = null;
+                  }),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('ACTUALIZAR MI TARJETA'),
+                ),
+            ],
+          );
+        }
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('memberCardSettings')
+              .doc(MemberCardRequestService.settingsDocumentId)
+              .snapshots(),
+          builder: (context, priceSnapshot) {
+            if (priceSnapshot.hasError) {
+              return const Text(
+                'No se pudo consultar el precio de la tarjeta.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFFFFB4A9), fontSize: 11),
+              );
+            }
+            if (!priceSnapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(12),
+                child: CircularProgressIndicator(color: gold),
+              );
+            }
+            final rawPrice = priceSnapshot.data?.data()?['price'];
+            final price = rawPrice is num ? rawPrice.toDouble() : null;
+            if (price == null || !price.isFinite || price <= 0) {
+              return const Text(
+                'Gerencia publicará el precio de la Member Card próximamente.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: muted, fontSize: 11),
+              );
+            }
+            return Column(
+              children: [
+                Text(
+                  'Solicita tu tarjeta física por ${_formatPrice(price)}. '
+                  'Tras confirmar el pago, Gerencia la preparará para entrega en TPV en 7 días.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: muted,
+                    fontSize: 11,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  key: const ValueKey('member-card-buy-qr'),
+                  onPressed: () => _startMemberCardQrPurchase(member, price),
+                  icon: const Icon(Icons.qr_code_2),
+                  label: Text('COMPRAR CON QR · ${_formatPrice(price)}'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: gold,
+                    foregroundColor: bg,
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _memberCard() {
@@ -29895,7 +31080,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   style: const TextStyle(color: muted),
                 ),
                 const SizedBox(height: 25),
-                FutureBuilder<String>(
+                FutureBuilder<String?>(
                   future: cardNumberFuture,
                   builder: (context, snapshot) {
                     if (cardNumberFuture == null) {
@@ -29931,7 +31116,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                                       _memberCardNumberUid = member.uid;
                                       _memberCardNumberFuture =
                                           _memberCardService
-                                              .getOrCreateCardNumber(
+                                              .getPaidMemberCardNumber(
                                         member.uid,
                                       );
                                     }),
@@ -29947,12 +31132,27 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         child: CircularProgressIndicator(color: gold),
                       );
                     }
-                    final cardNumber = snapshot.data!;
+                    final cardNumber = snapshot.data;
+                    if (cardNumber == null) {
+                      return member == null
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              child: Text(
+                                'Inicia sesión para solicitar tu Member Card.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: muted, fontSize: 11),
+                              ),
+                            )
+                          : _memberCardPurchaseSection(member);
+                    }
                     return Column(
                       children: [
                         QrImageView(
                           key: ValueKey('member-card-qr-$cardNumber'),
-                          data: cardNumber,
+                          data: membershipCardQrPayload(
+                            memberId: cardNumber,
+                            memberName: userName,
+                          ),
                           version: QrVersions.auto,
                           size: 150,
                           backgroundColor: Colors.white,

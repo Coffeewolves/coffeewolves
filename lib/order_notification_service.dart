@@ -12,6 +12,7 @@ class OrderNotificationService {
   static const _webVapidKey = String.fromEnvironment('WOLVES_FCM_VAPID_KEY');
 
   final FirebaseFirestore _firestore;
+  bool get isWebPushConfigured => _webVapidKey.isNotEmpty;
   StreamSubscription<String>? _tokenRefreshSubscription;
   StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
   String? _registeredUid;
@@ -24,7 +25,7 @@ class OrderNotificationService {
       throw StateError(
           'Las notificaciones push solo están configuradas para web.');
     }
-    if (_webVapidKey.isEmpty) {
+    if (!isWebPushConfigured) {
       throw StateError(
         'Falta WOLVES_FCM_VAPID_KEY. Configura la clave pública Web Push '
         'de Firebase y vuelve a compilar la app.',

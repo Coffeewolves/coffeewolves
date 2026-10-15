@@ -79,7 +79,9 @@ class _ColdBrewQrScannerState extends State<ColdBrewQrScanner> {
     return AlertDialog(
       backgroundColor: const Color(0xFF211E1A),
       title: Text(
-        customerScanned ? '2 de 2 · ESCANEA LA FIGURA' : '1 de 2 · ESCANEA AL USUARIO',
+        customerScanned
+            ? '2 de 2 · ESCANEA EL PREMIO'
+            : '1 de 2 · ESCANEA AL USUARIO',
         style: const TextStyle(color: Color(0xFFC6A06A), fontSize: 15),
       ),
       content: SizedBox(
@@ -89,7 +91,7 @@ class _ColdBrewQrScannerState extends State<ColdBrewQrScanner> {
           children: [
             Text(
               customerScanned
-                  ? 'Usuario identificado. Ahora escanea el QR de la figura Cold Brew.'
+                  ? 'Usuario identificado. Ahora escanea el QR de premio emitido por el personal.'
                   : 'Enfoca el QR Wolves Member Card del usuario.',
               style: const TextStyle(color: Color(0xFFE8DDC7), fontSize: 12),
             ),
