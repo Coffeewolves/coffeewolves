@@ -41,5 +41,18 @@ jobs:
       - name: Install Firebase CLI
         run: npm install --global firebase-tools
 
-      - name: Deploy Firestore rules and indexes
-        run: firebase deploy --only firestore:rules,firestore:indexes --project wolves-club-fb24a --non-interactive
+      - name: Deploy Firestore indexes
+        run: firebase deploy --only firestore:indexes --project wolves-club-fb24a --non-interactive
+
+      - name: Get Google Cloud access token
+        id: access-token
+        run: |
+          token="$(gcloud auth print-access-token)"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Activate Firestore rules release
+        env:
+          FIREBASE_PROJECT_ID: wolves-club-fb24a
+          GOOGLE_OAUTH_ACCESS_TOKEN: ${{ steps.access-token.outputs.token }}
+        run: python3 .github/scripts/deploy_firestore_rules.py
