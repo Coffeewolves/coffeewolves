@@ -72,7 +72,6 @@ def main():
                 "name": release_name,
                 "rulesetName": ruleset_name,
             },
-            "updateMask": "release.rulesetName",
         },
     )
     if release.get("rulesetName") != ruleset_name:
