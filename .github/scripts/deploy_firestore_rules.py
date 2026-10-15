@@ -3,7 +3,6 @@ import os
 import sys
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
@@ -66,11 +65,14 @@ def main():
     release_name = f"{project_path}/releases/cloud.firestore"
     release = request_json(
         "PATCH",
-        f"{api_base}/{release_name}?{urlencode({'updateMask': 'rulesetName'})}",
+        f"{api_base}/{release_name}",
         access_token,
         {
-            "name": release_name,
-            "rulesetName": ruleset_name,
+            "release": {
+                "name": release_name,
+                "rulesetName": ruleset_name,
+            },
+            "updateMask": "rulesetName",
         },
     )
     if release.get("rulesetName") != ruleset_name:
