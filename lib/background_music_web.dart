@@ -8,10 +8,10 @@ class BackgroundMusic {
   html.AudioElement? _audio;
   html.AudioElement? _howl;
   html.AudioElement? _orderBell;
+  html.AudioElement? _orderAnnouncement;
   html.AudioElement? _successTone;
   Timer? _orderAlarmTimer;
   bool _orderAlarmActive = false;
-  bool _usingSpeechAlarm = false;
   int _orderAlarmGeneration = 0;
 
   bool get isSupported => true;
@@ -57,12 +57,22 @@ class BackgroundMusic {
 
   Future<void> playOrderBell() async {
     final orderBell = _orderBell ??= html.AudioElement()
-      ..src = Uri.base.resolve('assets/assets/audio/order_bell.wav').toString()
+      ..src = Uri.base
+          .resolve('assets/assets/audio/kitchen_order_tone.mp3')
+          .toString()
       ..loop = false
       ..volume = 0.8
       ..preload = 'auto';
+    final announcement = _orderAnnouncement ??= html.AudioElement()
+      ..src = Uri.base
+          .resolve('assets/assets/audio/kitchen_order_announcement.wav')
+          .toString()
+      ..loop = false
+      ..volume = 1
+      ..preload = 'auto';
     orderBell.currentTime = 0;
-    await orderBell.play();
+    announcement.currentTime = 0;
+    await Future.wait([orderBell.play(), announcement.play()]);
   }
 
   Future<void> playRedemptionSuccess() async {
@@ -95,26 +105,36 @@ class BackgroundMusic {
 
   Future<void> startOrderAlarm() async {
     if (_orderAlarmActive) return;
-    if (js_util.hasProperty(html.window, 'speechSynthesis')) {
-      final speechSynthesis =
-          js_util.getProperty<Object?>(html.window, 'speechSynthesis');
-      if (speechSynthesis != null) {
-        _orderAlarmActive = true;
-        _usingSpeechAlarm = true;
-        final generation = ++_orderAlarmGeneration;
-        _speakOrderAnnouncement(speechSynthesis, generation);
-        return;
-      }
-    }
-
     _orderAlarmActive = true;
+    final generation = ++_orderAlarmGeneration;
     final orderBell = _orderBell ??= html.AudioElement()
-      ..src = Uri.base.resolve('assets/assets/audio/order_bell.wav').toString()
+      ..src = Uri.base
+          .resolve('assets/assets/audio/kitchen_order_tone.mp3')
+          .toString()
       ..volume = 0.8
+      ..preload = 'auto';
+    final announcement = _orderAnnouncement ??= html.AudioElement()
+      ..src = Uri.base
+          .resolve('assets/assets/audio/kitchen_order_announcement.wav')
+          .toString()
+      ..loop = false
+      ..volume = 1
       ..preload = 'auto';
     orderBell.loop = true;
     orderBell.currentTime = 0;
-    await orderBell.play();
+    try {
+      await orderBell.play();
+      if (!_orderAlarmActive || generation != _orderAlarmGeneration) return;
+      announcement.currentTime = 0;
+      await announcement.play();
+      if (!_orderAlarmActive || generation != _orderAlarmGeneration) return;
+      _orderAlarmTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+        unawaited(_repeatOrderAnnouncement(generation));
+      });
+    } catch (_) {
+      await stopOrderAlarm();
+      rethrow;
+    }
   }
 
   Future<void> stopOrderAlarm() async {
@@ -122,106 +142,30 @@ class BackgroundMusic {
     _orderAlarmTimer?.cancel();
     _orderAlarmTimer = null;
     _orderAlarmGeneration++;
-    if (_usingSpeechAlarm) {
-      final speechSynthesis =
-          js_util.getProperty<Object?>(html.window, 'speechSynthesis');
-      if (speechSynthesis != null) {
-        js_util.callMethod<void>(speechSynthesis, 'cancel', const []);
-      }
-      _usingSpeechAlarm = false;
-    }
     final orderBell = _orderBell;
-    if (orderBell == null) return;
-    orderBell.pause();
-    orderBell.currentTime = 0;
-    orderBell.loop = false;
+    orderBell?.pause();
+    if (orderBell != null) {
+      orderBell.currentTime = 0;
+      orderBell.loop = false;
+    }
+    final announcement = _orderAnnouncement;
+    announcement?.pause();
+    if (announcement != null) announcement.currentTime = 0;
   }
 
-  void _speakOrderAnnouncement(Object speechSynthesis, int generation) {
+  Future<void> _repeatOrderAnnouncement(int generation) async {
     if (!_orderAlarmActive || generation != _orderAlarmGeneration) return;
-
-    final constructor =
-        js_util.getProperty<Object?>(html.window, 'SpeechSynthesisUtterance');
-    if (constructor == null) {
-      throw StateError('El navegador no permite anunciar pedidos por voz.');
+    final announcement = _orderAnnouncement;
+    if (announcement == null) {
+      throw StateError('No se preparó la voz de la alarma de cocina.');
     }
-    final utterance = js_util.callConstructor<Object>(
-      constructor,
-      ['Tienes un nuevo pedido'],
-    );
-    js_util.setProperty(utterance, 'lang', 'es-MX');
-    js_util.setProperty(utterance, 'rate', 0.95);
-    js_util.setProperty(utterance, 'pitch', 1.1);
-
-    final voices = js_util.callMethod<Object?>(
-      speechSynthesis,
-      'getVoices',
-      const [],
-    );
-    if (voices != null) {
-      final voice = _preferredSpanishVoice(voices);
-      if (voice != null) js_util.setProperty(utterance, 'voice', voice);
+    try {
+      announcement.currentTime = 0;
+      await announcement.play();
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo repetir la voz de la alarma de cocina: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
-
-    js_util.callMethod<void>(speechSynthesis, 'speak', [utterance]);
-    _orderAlarmTimer = Timer(const Duration(seconds: 3), () {
-      _repeatOrderAnnouncement(speechSynthesis, generation);
-    });
-  }
-
-  void _repeatOrderAnnouncement(Object speechSynthesis, int generation) {
-    if (!_orderAlarmActive || generation != _orderAlarmGeneration) return;
-    if (js_util.getProperty<bool>(speechSynthesis, 'speaking')) {
-      _orderAlarmTimer = Timer(const Duration(seconds: 1), () {
-        _repeatOrderAnnouncement(speechSynthesis, generation);
-      });
-      return;
-    }
-    _speakOrderAnnouncement(speechSynthesis, generation);
-  }
-
-  Object? _preferredSpanishVoice(Object voices) {
-    const feminineVoiceNames = [
-      'sabina',
-      'paulina',
-      'monica',
-      'mónica',
-      'dalia',
-      'elena',
-      'laura',
-      'lucia',
-      'lucía',
-      'helena',
-      'sofia',
-      'sofía',
-      'carmen',
-      'andrea',
-      'valentina',
-      'marisol',
-      'female',
-      'mujer',
-    ];
-    final length = js_util.getProperty<int>(voices, 'length');
-    Object? preferredVoice;
-    var preferredScore = -1;
-    for (var index = 0; index < length; index++) {
-      final voice = js_util.getProperty<Object?>(voices, index);
-      if (voice == null) continue;
-      final language =
-          (js_util.getProperty<Object?>(voice, 'lang')?.toString() ?? '')
-              .toLowerCase();
-      if (!language.startsWith('es')) continue;
-      final name =
-          (js_util.getProperty<Object?>(voice, 'name')?.toString() ?? '')
-              .toLowerCase();
-      var score = language == 'es-mx' ? 2 : 0;
-      if (feminineVoiceNames.any(name.contains)) score += 10;
-      if (score > preferredScore) {
-        preferredScore = score;
-        preferredVoice = voice;
-      }
-    }
-    return preferredVoice;
   }
 
   Future<void> stop() async {
@@ -239,6 +183,7 @@ class BackgroundMusic {
     _successTone?.pause();
     _successTone?.currentTime = 0;
     _orderBell = null;
+    _orderAnnouncement = null;
     _successTone = null;
     _howl = null;
     _audio = null;

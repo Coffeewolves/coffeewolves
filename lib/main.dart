@@ -5581,18 +5581,21 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   ),
                 ),
               ),
-              TextButton.icon(
-                key: const ValueKey('test-kitchen-order-sound'),
-                onPressed: _activateCafeOrderSound,
-                icon: Icon(
-                  _cafeOrderSoundEnabled ? Icons.volume_up : Icons.play_arrow,
-                  size: 17,
-                ),
-                label: Text(
-                  _cafePushEnabled
-                      ? 'PROBAR SONIDO'
-                      : 'ACTIVAR ALARMA EN ESTE DISPOSITIVO',
-                  style: const TextStyle(fontSize: 9),
+              Tooltip(
+                message: 'Probar tono y voz de la comanda',
+                child: TextButton.icon(
+                  key: const ValueKey('test-kitchen-order-sound'),
+                  onPressed: _activateCafeOrderSound,
+                  icon: Icon(
+                    _cafeOrderSoundEnabled ? Icons.volume_up : Icons.play_arrow,
+                    size: 17,
+                  ),
+                  label: Text(
+                    _cafePushEnabled
+                        ? 'PROBAR'
+                        : 'ACTIVAR ALARMA EN ESTE DISPOSITIVO',
+                    style: const TextStyle(fontSize: 9),
+                  ),
                 ),
               ),
             ],
