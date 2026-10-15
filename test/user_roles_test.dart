@@ -15,6 +15,7 @@ void main() {
     test('preserves authorized staff roles and normalizes clientes', () {
       expect(normalizeUserRole('barista'), 'barista');
       expect(normalizeUserRole('cajero'), 'cajero');
+      expect(normalizeUserRole('cocina'), 'cocina');
       expect(normalizeUserRole('cliente'), 'user');
     });
 
@@ -23,5 +24,4 @@ void main() {
       expect(normalizeUserRole(null), 'user');
     });
   });
-
 }

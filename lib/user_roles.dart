@@ -11,7 +11,7 @@ String normalizeUserRole(Object? storedRole) {
   }.contains(role)) {
     return 'admin';
   }
-  return const {'user', 'barista', 'cajero', 'admin'}.contains(role)
+  return const {'user', 'barista', 'cajero', 'cocina', 'admin'}.contains(role)
       ? role
       : 'user';
 }

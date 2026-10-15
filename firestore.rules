@@ -14,6 +14,29 @@ service cloud.firestore {
       return role is string && role.lower() in ['barista', 'cajero'];
     }
 
+    function isKitchenRole(role) {
+      return role is string && role.lower() == 'cocina';
+    }
+
+    function hasValidStaffPersonalData(data) {
+      return data.firstName is string
+        && data.firstName.size() > 0
+        && data.firstName.size() <= 60
+        && data.lastName is string
+        && data.lastName.size() > 0
+        && data.lastName.size() <= 60
+        && data.gender in ['male', 'female']
+        && data.birthDate is string
+        && data.phoneNumber is string
+        && data.phoneNumber.matches('^\\+[1-9][0-9]{6,14}$')
+        && data.phoneCountryCode is string
+        && data.phoneCountryCode.matches('^\\+[1-9][0-9]{0,3}$')
+        && data.phoneCountryIsoCode is string
+        && data.phoneCountryIsoCode.matches('^[A-Z]{2}$')
+        && data.phoneNationalNumber is string
+        && data.phoneNationalNumber.matches('^[0-9]{7,15}$');
+    }
+
     function createdAtMatchesRequestTime() {
       let createdAt = request.resource.data.createdAt;
       return createdAt == request.time;
@@ -71,7 +94,7 @@ service cloud.firestore {
             get(managementPath).data.get('rol', '')
           )
         : exists(staffPath)
-          && isStaffRole(staffRole)
+          && (isStaffRole(staffRole) || isKitchenRole(staffRole))
           ? get(staffPath).data.get(
               'role',
               get(staffPath).data.get('rol', '')
@@ -135,6 +158,16 @@ service cloud.firestore {
         && request.auth.token.email_verified == true
         && (
           isStaffRole(databaseRole())
+          || isManagementRole(databaseRole())
+        );
+    }
+
+    function isVerifiedKitchenStaff() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && (
+          isStaffRole(databaseRole())
+          || isKitchenRole(databaseRole())
           || isManagementRole(databaseRole())
         );
     }
@@ -936,16 +969,21 @@ service cloud.firestore {
 
       allow create: if isAdmin()
         && request.resource.data.keys().hasOnly([
-          'email', 'displayName', 'username', 'birthDate', 'role', 'createdAt',
-          'approvedAt'
+          'email', 'firstName', 'lastName', 'displayName', 'username',
+          'gender', 'birthDate',
+          'phoneNumber', 'phoneCountryCode', 'phoneCountryIsoCode',
+          'phoneNationalNumber', 'role', 'createdAt', 'approvedAt'
         ])
         && request.resource.data.keys().hasAll([
-          'email', 'displayName', 'birthDate', 'role', 'createdAt',
+          'email', 'firstName', 'lastName', 'displayName', 'gender',
+          'birthDate', 'phoneNumber', 'phoneCountryCode',
+          'phoneCountryIsoCode', 'phoneNationalNumber', 'role', 'createdAt',
           'approvedAt'
         ])
-        && request.resource.data.role in ['barista', 'cajero']
+        && request.resource.data.role in ['barista', 'cajero', 'cocina']
         && request.resource.data.email is string
         && request.resource.data.displayName is string
+        && hasValidStaffPersonalData(request.resource.data)
         && (
           !('username' in request.resource.data)
           || request.resource.data.username is string
@@ -967,11 +1005,17 @@ service cloud.firestore {
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly([
-            'email', 'displayName', 'username', 'birthDate', 'role', 'approvedAt'
+            'email', 'firstName', 'lastName', 'displayName', 'username',
+            'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+            'phoneCountryIsoCode', 'phoneNationalNumber', 'role', 'approvedAt'
           ])
-        && request.resource.data.role in ['barista', 'cajero']
+        && request.resource.data.role in ['barista', 'cajero', 'cocina']
         && request.resource.data.email is string
         && request.resource.data.displayName is string
+        && (
+          !('gender' in request.resource.data)
+          || hasValidStaffPersonalData(request.resource.data)
+        )
         && (
           !('username' in request.resource.data)
           || request.resource.data.username is string
@@ -1752,7 +1796,7 @@ service cloud.firestore {
         allow create: if request.auth != null
           && request.auth.uid == userId
           && request.auth.token.email_verified == true
-          && (databaseRole() in ['barista', 'cajero'] || isAdmin())
+          && (databaseRole() in ['barista', 'cajero', 'cocina'] || isAdmin())
           && tokenHash.matches('^[a-f0-9]{64}$')
           && request.resource.data.keys().hasOnly([
             'token', 'platform', 'updatedAt'
@@ -1769,7 +1813,7 @@ service cloud.firestore {
         allow update: if request.auth != null
           && request.auth.uid == userId
           && request.auth.token.email_verified == true
-          && (databaseRole() in ['barista', 'cajero'] || isAdmin())
+          && (databaseRole() in ['barista', 'cajero', 'cocina'] || isAdmin())
           && tokenHash.matches('^[a-f0-9]{64}$')
           && request.resource.data.keys().hasOnly([
             'token', 'platform', 'updatedAt'
@@ -2190,11 +2234,15 @@ service cloud.firestore {
         && request.auth.uid == userId
         && request.auth.token.email is string
         && request.resource.data.keys().hasOnly([
-          'email', 'displayName', 'username', 'birthDate', 'requestedRole',
+          'email', 'firstName', 'lastName', 'displayName', 'username',
+          'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+          'phoneCountryIsoCode', 'phoneNationalNumber', 'requestedRole',
           'status', 'createdAt'
         ])
         && request.resource.data.keys().hasAll([
-          'email', 'displayName', 'username', 'birthDate', 'requestedRole',
+          'email', 'firstName', 'lastName', 'displayName', 'username',
+          'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+          'phoneCountryIsoCode', 'phoneNationalNumber', 'requestedRole',
           'status', 'createdAt'
         ])
         && request.resource.data.email == request.auth.token.email
@@ -2211,9 +2259,9 @@ service cloud.firestore {
         && getAfter(
           /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
         ).data.role == 'staff'
-        && request.resource.data.birthDate is string
+        && hasValidStaffPersonalData(request.resource.data)
         && request.resource.data.requestedRole
-          in ['barista', 'cajero']
+          in ['barista', 'cajero', 'cocina']
         && request.resource.data.status == 'pending'
         && createdAtMatchesRequestTime();
 
@@ -2223,11 +2271,15 @@ service cloud.firestore {
           && resource.data.status == 'pending'
           && request.auth.token.email is string
           && request.resource.data.keys().hasOnly([
-            'email', 'displayName', 'username', 'birthDate', 'requestedRole',
+            'email', 'firstName', 'lastName', 'displayName', 'username',
+            'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+            'phoneCountryIsoCode', 'phoneNationalNumber', 'requestedRole',
             'status', 'createdAt'
           ])
           && request.resource.data.keys().hasAll([
-            'email', 'displayName', 'username', 'birthDate', 'requestedRole',
+            'email', 'firstName', 'lastName', 'displayName', 'username',
+            'gender', 'birthDate', 'phoneNumber', 'phoneCountryCode',
+            'phoneCountryIsoCode', 'phoneNationalNumber', 'requestedRole',
             'status', 'createdAt'
           ])
           && request.resource.data.email == request.auth.token.email
@@ -2244,9 +2296,9 @@ service cloud.firestore {
           && getAfter(
             /databases/$(database)/documents/usernameRegistry/$(request.resource.data.username.lower())
           ).data.role == 'staff'
-          && request.resource.data.birthDate is string
+          && hasValidStaffPersonalData(request.resource.data)
           && request.resource.data.requestedRole
-            in ['barista', 'cajero']
+            in ['barista', 'cajero', 'cocina']
           && request.resource.data.status == 'pending'
           && createdAtMatchesRequestTime()
         ) || (
@@ -2418,44 +2470,37 @@ service cloud.firestore {
     }
 
     match /pedidos_internos/{orderId} {
-      allow get, list: if isVerifiedStaff();
+      allow get, list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /kitchenOrders/{orderId} {
+      allow get, list: if isVerifiedKitchenStaff();
 
       allow create: if isVerifiedStaff()
         && request.resource.data.keys().hasOnly([
-          'saleId', 'employeeUid', 'employeeEmail', 'shift',
-          'cashSessionId', 'paymentMethod', 'total', 'items', 'saleItems',
-          'status', 'createdAt', 'tableNumber'
+          'orderId', 'tableNumber', 'customerName', 'serviceType', 'status',
+          'createdAt'
         ])
         && request.resource.data.keys().hasAll([
-          'saleId', 'employeeUid', 'employeeEmail', 'shift',
-          'cashSessionId', 'paymentMethod', 'total', 'items', 'saleItems',
-          'status', 'createdAt'
+          'orderId', 'serviceType', 'status', 'createdAt'
         ])
-        && request.resource.data.saleId == orderId
-        && request.resource.data.employeeUid == request.auth.uid
-        && request.resource.data.employeeEmail == request.auth.token.email
-        && request.resource.data.shift in ['morning', 'afternoon', 'night']
-        && request.resource.data.cashSessionId is string
-        && request.resource.data.paymentMethod in [
-          'cash', 'qr', 'card', 'wallet'
+        && request.resource.data.orderId == orderId
+        && request.resource.data.serviceType in [
+          'dineIn', 'takeaway', 'delivery'
         ]
-        && request.resource.data.total is number
-        && request.resource.data.total > 0
-        && request.resource.data.saleItems is list
-        && request.resource.data.saleItems.size() > 0
-        && request.resource.data.saleItems.size() <= 30
-        && request.resource.data.items is list
-        && request.resource.data.items.size() <= 30
-        && request.resource.data.status
-          == (request.resource.data.items.size() == 0
-            ? 'confirmed'
-            : 'pending')
-        && createdAtMatchesRequestTime()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
         && (
           !('tableNumber' in request.resource.data)
           || request.resource.data.tableNumber is int
             && request.resource.data.tableNumber >= 1
             && request.resource.data.tableNumber <= 8
+        )
+        && (
+          !('customerName' in request.resource.data)
+          || request.resource.data.customerName is string
+            && request.resource.data.customerName.size() <= 100
         )
         && existsAfter(
           /databases/$(database)/documents/cafeSales/$(orderId)
@@ -2465,39 +2510,81 @@ service cloud.firestore {
         ).data.employeeUid == request.auth.uid
         && getAfter(
           /databases/$(database)/documents/cafeSales/$(orderId)
-        ).data.employeeEmail == request.auth.token.email
+        ).data.cafeItems is list
         && getAfter(
           /databases/$(database)/documents/cafeSales/$(orderId)
-        ).data.shift == request.resource.data.shift
-        && getAfter(
-          /databases/$(database)/documents/cafeSales/$(orderId)
-        ).data.cashSessionId == request.resource.data.cashSessionId
-        && getAfter(
-          /databases/$(database)/documents/cafeSales/$(orderId)
-        ).data.paymentMethod == request.resource.data.paymentMethod
-        && getAfter(
-          /databases/$(database)/documents/cafeSales/$(orderId)
-        ).data.total == request.resource.data.total
-        && getAfter(
-          /databases/$(database)/documents/cafeSales/$(orderId)
-        ).data.items == request.resource.data.saleItems
-        && getAfter(
-          /databases/$(database)/documents/cafeSales/$(orderId)
-        ).data.paidAt == request.time
-        && getAfter(
-          /databases/$(database)/documents/cafeSales/$(orderId)
-        ).data.cafeItems == request.resource.data.items;
+        ).data.cafeItems.size() > 0;
 
-      allow update: if isVerifiedStaff()
-        && resource.data.status == 'pending'
-        && request.resource.data.status == 'acknowledged'
-        && request.resource.data.acknowledgedBy == request.auth.uid
-        && request.resource.data.acknowledgedAt == request.time
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status', 'acknowledgedAt', 'acknowledgedBy'
-        ]);
+      allow update: if isVerifiedKitchenStaff()
+        && (
+          resource.data.status == 'pending'
+          && request.resource.data.status == 'preparing'
+          && request.resource.data.startedBy == request.auth.uid
+          && request.resource.data.startedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'startedBy', 'startedAt'])
+          || resource.data.status == 'preparing'
+          && request.resource.data.status == 'ready'
+          && request.resource.data.completedBy == request.auth.uid
+          && request.resource.data.readyAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'completedBy', 'readyAt'])
+          || resource.data.status == 'ready'
+          && resource.data.completedBy == request.auth.uid
+          && resource.data.readyAt is timestamp
+          && resource.data.readyAt > request.time - duration.value(60, 's')
+          && request.resource.data.status in ['pending', 'preparing']
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'status', 'completedBy', 'readyAt', 'startedBy', 'startedAt'
+            ])
+          && (
+            request.resource.data.status == 'pending'
+            && !('startedBy' in request.resource.data)
+            && !('startedAt' in request.resource.data)
+            || request.resource.data.status == 'preparing'
+            && request.resource.data.startedBy is string
+            && request.resource.data.startedAt is timestamp
+          )
+        );
 
       allow delete: if false;
+
+      match /items/{itemId} {
+        allow get, list: if isVerifiedKitchenStaff();
+
+        allow create: if isVerifiedStaff()
+          && request.resource.data.keys().hasOnly([
+            'quantity', 'name', 'size', 'modifications', 'position'
+          ])
+          && request.resource.data.keys().hasAll([
+            'quantity', 'name', 'modifications', 'position'
+          ])
+          && request.resource.data.quantity is int
+          && request.resource.data.quantity > 0
+          && request.resource.data.quantity <= 99
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.modifications is list
+          && request.resource.data.modifications.size() <= 10
+          && request.resource.data.position is int
+          && request.resource.data.position >= 0
+          && request.resource.data.position < 30
+          && (
+            !('size' in request.resource.data)
+            || request.resource.data.size is string
+              && request.resource.data.size.size() <= 40
+          )
+          && existsAfter(
+            /databases/$(database)/documents/kitchenOrders/$(orderId)
+          )
+          && getAfter(
+            /databases/$(database)/documents/kitchenOrders/$(orderId)
+          ).data.status == 'pending';
+
+        allow update, delete: if false;
+      }
     }
 
     match /cafeOrders/{orderId} {

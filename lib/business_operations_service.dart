@@ -212,6 +212,7 @@ class BusinessOperationsService {
     required DateTime date,
     required String shift,
     required String paymentMethod,
+    String serviceType = 'takeaway',
     required double total,
     required double cashReceived,
     required double changeDue,
@@ -237,8 +238,8 @@ class BusinessOperationsService {
     final cafeItems = items
         .where((item) => item['catalogCollection'] == 'cafeCatalog')
         .toList(growable: false);
-    final internalOrderRef =
-        _firestore.collection('pedidos_internos').doc(saleRef.id);
+    final kitchenOrderRef =
+        _firestore.collection('kitchenOrders').doc(saleRef.id);
     final attendanceRef = _firestore
         .collection('staffAttendance')
         .doc(attendanceId(key, employeeUid));
@@ -438,20 +439,39 @@ class BusinessOperationsService {
         'paidAt': FieldValue.serverTimestamp(),
       });
 
-      transaction.set(internalOrderRef, {
-        'saleId': saleRef.id,
-        'employeeUid': employeeUid,
-        'employeeEmail': employeeEmail,
-        'shift': shift,
-        'cashSessionId': cashSessionId(key, employeeUid, shift),
-        'paymentMethod': paymentMethod,
-        'total': total,
-        'items': cafeItems,
-        'saleItems': items,
-        'status': cafeItems.isEmpty ? 'confirmed' : 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-        if (tableNumber != null) 'tableNumber': tableNumber,
-      });
+      if (cafeItems.isNotEmpty) {
+        final kitchenItems = cafeItems.map((item) {
+          final rawNotes = item['modifications'] ?? item['notes'];
+          final modifications = rawNotes is String && rawNotes.trim().isNotEmpty
+              ? [rawNotes.trim()]
+              : rawNotes is List
+                  ? rawNotes.whereType<String>().toList(growable: false)
+                  : const <String>[];
+          return {
+            'quantity': item['quantity'],
+            'name': item['name'],
+            if (item['size'] is String) 'size': item['size'],
+            'modifications': modifications,
+          };
+        }).toList(growable: false);
+
+        transaction.set(kitchenOrderRef, {
+          'orderId': saleRef.id,
+          if (tableNumber != null) 'tableNumber': tableNumber,
+          'serviceType': serviceType,
+          'status': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        for (var index = 0; index < kitchenItems.length; index++) {
+          transaction.set(
+            kitchenOrderRef.collection('items').doc('$index'),
+            {
+              ...kitchenItems[index],
+              'position': index,
+            },
+          );
+        }
+      }
 
       if (walletRef != null && walletTransactionRef != null) {
         transaction.update(walletRef, {

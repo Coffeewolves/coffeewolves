@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:country_code_picker/country_code_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart' show compute, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart' as fa;
 import 'package:image_picker/image_picker.dart';
@@ -22,6 +24,10 @@ import 'background_music_stub.dart'
 import 'firebase_options.dart';
 import 'business_operations_service.dart';
 import 'chat_credit_service.dart';
+import 'cold_brew_qr_payload.dart';
+import 'cold_brew_qr_scanner.dart';
+import 'kitchen_order.dart';
+import 'kitchen_order_card.dart';
 import 'lost_pet_screen.dart';
 import 'mischief_wall_screen.dart';
 import 'pack_legacy_screen.dart';
@@ -137,6 +143,97 @@ class FirebaseStartupFailure extends StatelessWidget {
 // WOLVES CLUB - COFFEE WOLVES
 // Prototipo V1 - Todo en un solo archivo
 // ============================================================
+
+class _StaffAccountTypeCard extends StatelessWidget {
+  const _StaffAccountTypeCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFFC6A06A);
+    const cream = Color(0xFFF1E7D6);
+    return Semantics(
+      button: true,
+      selected: selected,
+      enabled: enabled,
+      label: '$title, $subtitle',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(16),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            constraints: const BoxConstraints(minHeight: 116),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              color: selected
+                  ? gold.withValues(alpha: 0.14)
+                  : const Color(0xFF111516),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: selected ? gold : cream.withValues(alpha: 0.14),
+                width: selected ? 1.5 : 1,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: gold.withValues(alpha: 0.10),
+                        blurRadius: 14,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  color: selected ? gold : cream.withValues(alpha: 0.72),
+                  size: 25,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: selected ? cream : cream.withValues(alpha: 0.88),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: cream.withValues(alpha: 0.68),
+                    fontSize: 10,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class WolvesClubApp extends StatefulWidget {
   const WolvesClubApp({
@@ -4249,7 +4346,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   String? _cafeOrdersUid;
   String? _bitacoraStreamUid;
   Stream<Bitacora>? _bitacoraStream;
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _pendingCafeOrders = [];
+  List<KitchenOrder> _pendingCafeOrders = [];
+  KitchenOrder? _lastCompletedKitchenOrder;
+  DateTime? _kitchenUndoDeadline;
+  Timer? _kitchenUndoTimer;
   FirebaseRemoteConfig? _remoteConfig;
   Future<QuerySnapshot<Map<String, dynamic>>>? _adminOrdersFuture;
   Timer? _remoteConfigRefreshTimer;
@@ -4277,11 +4377,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   final List<ShopProduct> _shopProducts = _createShopProducts();
   final List<CollectiblePlush> _collectiblePlushes = [];
   final Random _secureRandom = Random.secure();
-  Timer? _baristaQrTimer;
   Timer? _inactivityTimer;
   Timer? _adminFinanceTimeout;
-  String? _activeBaristaQr;
-  DateTime? _baristaQrExpiresAt;
   String _authenticatedBarista = '';
   String? _activePosBarista;
   String _selectedPosFamilyId = 'speciality-coffee';
@@ -4291,13 +4388,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   Map<String, dynamic>? _selectedPublicEvent;
   bool _posShowingTables = false;
   int? _selectedPosTableNumber;
+  String _selectedPosServiceType = 'takeaway';
   final List<PosTable> _posTables = List.generate(
     8,
     (index) => PosTable(number: index + 1),
   );
   bool _isShowingPrintPreview = false;
-  int _baristaQrSecondsRemaining = 0;
-  int _baristaQrGeneration = 0;
   double _walletBalance = 0;
   String _giftCodeInput = '';
   DateTime _lastPassportVisitAt = DateTime.now();
@@ -4344,6 +4440,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   String? _customerUidForSale;
 
   bool get _isStaffRole => _userRole == 'barista' || _userRole == 'cajero';
+  bool get _isKitchenRole => _userRole == 'cocina';
   bool get _canUseManagementTools =>
       _userRole == 'admin' &&
       _adminFinanceUnlocked &&
@@ -4368,6 +4465,17 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
   bool get _canAccessPos =>
       _isStaffRole || (_userRole == 'admin' && _adminPosAccessEnabled);
+  bool get _canAccessKitchen =>
+      _isStaffRole ||
+      _isKitchenRole ||
+      (_userRole == 'admin' && _adminPosAccessEnabled);
+
+  String _staffRoleLabel(String role) => switch (role) {
+        'barista' => 'TPV',
+        'cajero' => 'Caja',
+        'cocina' => 'Cocina',
+        _ => role.toUpperCase(),
+      };
 
   static const _minimumSplashDuration = Duration(seconds: 5);
 
@@ -4727,11 +4835,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     );
     _splashController.addStatusListener((status) {
       if (status == AnimationStatus.completed && mounted && page == 'splash') {
-        go(_isStaffRole
-            ? 'pos'
-            : _userRole == 'admin'
-                ? 'admin'
-                : 'home');
+        go(_isKitchenRole
+            ? 'kitchen'
+            : _isStaffRole
+                ? 'pos'
+                : _userRole == 'admin'
+                    ? 'admin'
+                    : 'home');
       }
     });
     _inactivityTimer = Timer.periodic(
@@ -4753,11 +4863,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     }
     unawaited(_cafeCatalogSubscription?.cancel());
     unawaited(_cafeOrdersSubscription?.cancel());
+    _kitchenUndoTimer?.cancel();
     unawaited(_passportProgressSubscription?.cancel());
     unawaited(_authSubscription?.cancel());
     unawaited(_orderNotificationService.dispose());
     _remoteConfigRefreshTimer?.cancel();
-    _baristaQrTimer?.cancel();
     _inactivityTimer?.cancel();
     _adminFinanceTimeout?.cancel();
     _paymentGeneration++;
@@ -4866,9 +4976,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         _splashController.status != AnimationStatus.completed) {
       return;
     }
-    if (_isStaffRole && destination != 'pos') {
+    if (_isStaffRole && destination != 'pos' && destination != 'kitchen') {
       _showSnackBar(
-          'Las cuentas de barra y caja solo pueden operar en el TPV.');
+          'Las cuentas de barra y caja solo pueden operar en el TPV y cocina.');
+      return;
+    }
+    if (_isKitchenRole && destination != 'kitchen') {
+      _showSnackBar('Esta cuenta solo puede acceder a la pantalla de cocina.');
       return;
     }
     if (destination == 'baristaAudit' && !_isStaffRole) {
@@ -4880,19 +4994,28 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           'Ese módulo ya no está disponible para cuentas de barista.');
       return;
     }
-    final isBaristaRoute = destination == 'pos';
-    if (isBaristaRoute && _isLoadingRole) {
+    final isPosOrKitchenRoute =
+        destination == 'pos' || destination == 'kitchen';
+    if (isPosOrKitchenRoute && _isLoadingRole) {
       _showSnackBar('Verificando los permisos de esta cuenta.');
       return;
     }
-    if (isBaristaRoute &&
-        (!_canAccessPos ||
+    if (destination == 'pos' && !_canAccessPos) {
+      _showSnackBar(
+        _firebaseUser == null
+            ? 'Inicia sesión con una cuenta autorizada de gerencia, TPV o caja.'
+            : 'Tu cuenta no tiene permiso para usar el punto de venta.',
+      );
+      return;
+    }
+    if (destination == 'kitchen' &&
+        (!_canAccessKitchen ||
             (_userRole == 'admin' &&
                 (page != 'admin' || !_adminPosAccessEnabled)))) {
       _showSnackBar(
         _firebaseUser == null
-            ? 'Inicia sesión con una cuenta autorizada de gerencia, barista o cajero.'
-            : 'Tu cuenta no tiene permiso para usar el punto de venta.',
+            ? 'Inicia sesión con una cuenta autorizada de gerencia, TPV, caja o cocina.'
+            : 'Tu cuenta no tiene permiso para acceder a cocina.',
       );
       return;
     }
@@ -4903,9 +5026,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     }
     if (_userRole == 'admin' &&
         destination != 'admin' &&
-        destination != 'pos') {
+        destination != 'pos' &&
+        destination != 'kitchen') {
       _showSnackBar(
-          'La cuenta de gerencia solo puede acceder a administración o al TPV.');
+          'La cuenta de gerencia solo puede acceder a administración, TPV o cocina.');
       return;
     }
     if (destination == 'shopProductDetail' &&
@@ -5090,6 +5214,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           _pageHistory.clear();
           page = 'pos';
         }
+        if (authorizedRole == 'cocina' && page != 'plushAuthenticity') {
+          _pageHistory.clear();
+          page = 'kitchen';
+        }
         if (authorizedRole == 'admin' && page != 'plushAuthenticity') {
           _pageHistory.clear();
           page = 'admin';
@@ -5111,7 +5239,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       } else {
         _clearPassportProgress();
       }
-      if (_canAccessPos && !debugRoleBypassActive) {
+      if (_canAccessKitchen && !debugRoleBypassActive) {
         _subscribeCafeOrders(activeUser);
       } else {
         _clearCafeOrders();
@@ -5373,41 +5501,36 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     unawaited(_cafeOrdersSubscription?.cancel());
     _cafeOrdersUid = user.uid;
     _cafeOrdersSubscription = FirebaseFirestore.instance
-        .collection('pedidos_internos')
-        .where('status', isEqualTo: 'pending')
+        .collection('kitchenOrders')
+        .where('status', whereIn: ['pending', 'preparing'])
         .snapshots()
         .listen(
-      (snapshot) {
-        if (!mounted || _cafeOrdersUid != user.uid) return;
-        final orders = [...snapshot.docs]..sort((left, right) {
-            final leftCreatedAt = left.data()['createdAt'];
-            final rightCreatedAt = right.data()['createdAt'];
-            final leftDate = leftCreatedAt is Timestamp
-                ? leftCreatedAt.toDate()
-                : DateTime.fromMillisecondsSinceEpoch(0);
-            final rightDate = rightCreatedAt is Timestamp
-                ? rightCreatedAt.toDate()
-                : DateTime.fromMillisecondsSinceEpoch(0);
-            return leftDate.compareTo(rightDate);
-          });
-        setState(() => _pendingCafeOrders = orders);
-        if (orders.isEmpty) {
-          _cafeOrderAlarmPlaying = false;
-          unawaited(_musicPlayer.stopOrderAlarm());
-        } else if (_cafeOrderSoundEnabled) {
-          unawaited(_startCafeOrderAlarm());
-        }
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        debugPrint('No se pudieron escuchar las comandas de cocina: $error');
-        debugPrintStack(stackTrace: stackTrace);
-        if (mounted && _cafeOrdersUid == user.uid) {
-          _showSnackBar(
-            'No se pudo conectar la alarma de cocina. Revisa tu acceso al TPV.',
-          );
-        }
-      },
-    );
+          (snapshot) {
+            if (!mounted || _cafeOrdersUid != user.uid) return;
+            final orders = snapshot.docs.map(KitchenOrder.fromSnapshot).toList()
+              ..sort(
+                  (left, right) => left.createdAt.compareTo(right.createdAt));
+            setState(() => _pendingCafeOrders = orders);
+            final hasPendingOrders = orders
+                .any((order) => order.status == KitchenOrderStatus.pending);
+            if (!hasPendingOrders) {
+              _cafeOrderAlarmPlaying = false;
+              unawaited(_musicPlayer.stopOrderAlarm());
+            } else if (_cafeOrderSoundEnabled) {
+              unawaited(_startCafeOrderAlarm());
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint(
+                'No se pudieron escuchar las comandas de cocina: $error');
+            debugPrintStack(stackTrace: stackTrace);
+            if (mounted && _cafeOrdersUid == user.uid) {
+              _showSnackBar(
+                'No se pudo conectar la alarma de cocina. Revisa tu acceso al TPV.',
+              );
+            }
+          },
+        );
   }
 
   void _clearCafeOrders() {
@@ -5418,15 +5541,19 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     _cafeOrderAlarmPlaying = false;
     _cafePushEnabled = false;
     _pendingCafeOrders = [];
+    _kitchenUndoTimer?.cancel();
+    _kitchenUndoTimer = null;
+    _lastCompletedKitchenOrder = null;
+    _kitchenUndoDeadline = null;
     unawaited(_musicPlayer.stopOrderAlarm());
   }
 
   Future<void> _activateCafeOrderSound() async {
     try {
       final user = _firebaseUser;
-      if (user == null || !_canAccessPos || _debugRoleBypassActive) {
+      if (user == null || !_canAccessKitchen || _debugRoleBypassActive) {
         throw StateError(
-          'Inicia sesión con una cuenta verificada de gerencia, barista o cajero.',
+          'Inicia sesión con una cuenta verificada de gerencia, TPV, caja o cocina.',
         );
       }
       final pushSetup =
@@ -5436,15 +5563,17 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       setState(() {
         _cafeOrderSoundEnabled = true;
       });
-      if (_pendingCafeOrders.isNotEmpty) {
+      if (_pendingCafeOrders
+          .any((order) => order.status == KitchenOrderStatus.pending)) {
         await _startCafeOrderAlarm();
       }
       await pushSetup;
       if (mounted) setState(() => _cafePushEnabled = true);
       _showSnackBar(
-        _pendingCafeOrders.isEmpty
+        !_pendingCafeOrders
+                .any((order) => order.status == KitchenOrderStatus.pending)
             ? 'Sonido y notificaciones activados en este dispositivo.'
-            : 'Alarma activa. Se repetirá hasta que cocina reconozca la comanda.',
+            : 'Alarma activa. Se repetirá hasta que cocina inicie la comanda.',
       );
     } catch (error, stackTrace) {
       debugPrint('No se pudo activar la alarma de cocina: $error');
@@ -5519,32 +5648,131 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     }
   }
 
-  Future<void> _acknowledgeCafeOrder(
-    QueryDocumentSnapshot<Map<String, dynamic>> order,
-  ) async {
+  Future<void> _startKitchenOrder(KitchenOrder order) async {
     final user = _firebaseUser;
-    if (user == null || !_canAccessPos) return;
+    if (user == null || !_canAccessKitchen) return;
     try {
-      await order.reference.update({
-        'status': 'acknowledged',
-        'acknowledgedBy': user.uid,
-        'acknowledgedAt': FieldValue.serverTimestamp(),
+      await FirebaseFirestore.instance
+          .collection('kitchenOrders')
+          .doc(order.id)
+          .update({
+        'status': 'preparing',
+        'startedBy': user.uid,
+        'startedAt': FieldValue.serverTimestamp(),
       });
-      _showSnackBar(
-          'Comanda ${order.id.substring(0, 6)} reconocida por cocina.');
+      if (!mounted) return;
+      _showSnackBar('Comanda ${order.id.substring(0, 6)} en preparación.');
     } on FirebaseException catch (error, stackTrace) {
-      debugPrint('No se pudo reconocer la comanda (${error.code}).');
+      debugPrint('No se pudo iniciar la comanda (${error.code}).');
       debugPrintStack(stackTrace: stackTrace);
-      _showSnackBar('No se pudo reconocer la comanda (${error.code}).');
+      _showSnackBar('No se pudo iniciar la comanda (${error.code}).');
     } catch (error, stackTrace) {
-      debugPrint('Error al reconocer la comanda: $error');
+      debugPrint('Error al iniciar la comanda: $error');
       debugPrintStack(stackTrace: stackTrace);
-      _showSnackBar('No se pudo reconocer la comanda.');
+      _showSnackBar('No se pudo iniciar la comanda.');
+    }
+  }
+
+  Future<void> _completeKitchenOrder(KitchenOrder order) async {
+    final user = _firebaseUser;
+    if (user == null || !_canAccessKitchen) return;
+    try {
+      final reference =
+          FirebaseFirestore.instance.collection('kitchenOrders').doc(order.id);
+      await reference.update({
+        'status': 'ready',
+        'completedBy': user.uid,
+        'readyAt': FieldValue.serverTimestamp(),
+      });
+      final completedSnapshot = await reference.get();
+      final readyAt = completedSnapshot.data()?['readyAt'];
+      if (!mounted) return;
+      _kitchenUndoTimer?.cancel();
+      setState(() {
+        _lastCompletedKitchenOrder = order;
+        _kitchenUndoDeadline =
+            (readyAt is Timestamp ? readyAt.toDate() : DateTime.now())
+                .add(const Duration(seconds: 60));
+      });
+      _kitchenUndoTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        if (_kitchenUndoDeadline?.isBefore(DateTime.now()) ?? true) {
+          timer.cancel();
+          setState(() {
+            _lastCompletedKitchenOrder = null;
+            _kitchenUndoDeadline = null;
+          });
+        } else {
+          setState(() {});
+        }
+      });
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo completar la comanda (${error.code}).');
+      debugPrintStack(stackTrace: stackTrace);
+      _showSnackBar('No se pudo terminar la comanda (${error.code}).');
+    } catch (error, stackTrace) {
+      debugPrint('Error al completar la comanda: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _showSnackBar('No se pudo terminar la comanda.');
+    }
+  }
+
+  Future<void> _undoKitchenCompletion() async {
+    final user = _firebaseUser;
+    final order = _lastCompletedKitchenOrder;
+    final deadline = _kitchenUndoDeadline;
+    if (user == null ||
+        order == null ||
+        deadline == null ||
+        DateTime.now().isAfter(deadline)) {
+      return;
+    }
+
+    try {
+      final reference =
+          FirebaseFirestore.instance.collection('kitchenOrders').doc(order.id);
+      final snapshot = await reference.get();
+      if (!snapshot.exists ||
+          snapshot.data()?['status'] != 'ready' ||
+          snapshot.data()?['completedBy'] != user.uid) {
+        throw StateError('La comanda ya no se puede recuperar.');
+      }
+      await reference.update({
+        'status': order.status == KitchenOrderStatus.pending
+            ? 'pending'
+            : 'preparing',
+        'completedBy': FieldValue.delete(),
+        'readyAt': FieldValue.delete(),
+        if (order.status == KitchenOrderStatus.pending) ...{
+          'startedBy': FieldValue.delete(),
+          'startedAt': FieldValue.delete(),
+        },
+      });
+      _kitchenUndoTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _lastCompletedKitchenOrder = null;
+          _kitchenUndoDeadline = null;
+        });
+        _showSnackBar('Se recuperó la comanda.');
+      }
+    } on FirebaseException catch (error, stackTrace) {
+      debugPrint('No se pudo deshacer la comanda (${error.code}).');
+      debugPrintStack(stackTrace: stackTrace);
+      _showSnackBar('No se pudo recuperar la comanda (${error.code}).');
+    } on StateError catch (error) {
+      if (mounted) _showSnackBar(error.message);
     }
   }
 
   Widget _cafeKitchenOrdersPanel() {
     final orders = _pendingCafeOrders;
+    final waitingCount = orders
+        .where((order) => order.status == KitchenOrderStatus.pending)
+        .length;
     return Container(
       key: const ValueKey('cafe-kitchen-orders'),
       margin: const EdgeInsets.only(top: 12),
@@ -5572,7 +5800,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'COMANDAS DE COCINA · ${orders.length} PENDIENTES',
+                  'COMANDAS DE COCINA · $waitingCount NUEVAS · '
+                  '${orders.length} ACTIVAS',
                   style: const TextStyle(
                     color: cream,
                     fontSize: 11,
@@ -5602,62 +5831,189 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           ),
           if (orders.isEmpty)
             const Text(
-              'No hay comandas pendientes. La alarma se repetirá cuando entre una.',
+              'No hay comandas activas. Las nuevas aparecerán aquí al instante.',
               style: TextStyle(color: muted, fontSize: 11),
             )
           else
-            ...orders.map((order) {
-              final data = order.data();
-              final tableNumber = data['tableNumber'];
-              final items = (data['items'] as List<dynamic>? ?? const [])
-                  .whereType<Map<String, dynamic>>()
-                  .toList(growable: false);
-              return Container(
-                margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: card2,
-                  borderRadius: BorderRadius.circular(10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Siguiente: ${orders.first.tableNumber == null ? 'Llevar' : 'Mesa ${orders.first.tableNumber}'} · '
+                    '${orders.first.id.substring(0, 6).toUpperCase()}',
+                    style: const TextStyle(color: cream, fontSize: 11),
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'COMANDA ${order.id.substring(0, 6).toUpperCase()}'
-                      '${tableNumber is int ? ' · MESA $tableNumber' : ' · BARRA'}',
-                      style: const TextStyle(
-                        color: gold,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
+                TextButton(
+                  onPressed: () => go('kitchen'),
+                  child: const Text('VER KDS'),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _kitchenDisplayScreen() {
+    final pendingCount = _pendingCafeOrders
+        .where((order) => order.status == KitchenOrderStatus.pending)
+        .length;
+    final undoDeadline = _kitchenUndoDeadline;
+    final undoSeconds = undoDeadline == null
+        ? 0
+        : undoDeadline.difference(DateTime.now()).inSeconds.clamp(0, 60);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              if (_isKitchenRole)
+                const SizedBox(width: 48)
+              else
+                IconButton(
+                  key: const ValueKey('kitchen-back-to-pos'),
+                  onPressed: back,
+                  tooltip: 'Volver al TPV',
+                  icon: const Icon(Icons.arrow_back_ios_new, color: gold),
+                ),
+              const Expanded(
+                child: Text(
+                  'WOLVES CLUB · COCINA',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: cream,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+              IconButton(
+                key: const ValueKey('kitchen-alarm-toggle'),
+                onPressed: _activateCafeOrderSound,
+                tooltip: 'Activar sonido en este dispositivo',
+                icon: Icon(
+                  _cafeOrderSoundEnabled
+                      ? Icons.volume_up
+                      : Icons.volume_off_outlined,
+                  color: _cafeOrderSoundEnabled ? green : gold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${_pendingCafeOrders.length} ACTIVAS · '
+                  '$pendingCount NUEVAS',
+                  style: const TextStyle(
+                    color: muted,
+                    fontSize: 12,
+                    letterSpacing: 0.7,
+                  ),
+                ),
+              ),
+              if (_lastCompletedKitchenOrder != null && undoSeconds > 0)
+                OutlinedButton.icon(
+                  key: const ValueKey('undo-kitchen-completion'),
+                  onPressed: _undoKitchenCompletion,
+                  icon: const Icon(Icons.undo, size: 17),
+                  label: Text('DESHACER · ${undoSeconds}s'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_pendingCafeOrders.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(30),
+              decoration: BoxDecoration(
+                color: card,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: gold.withValues(alpha: 0.25)),
+              ),
+              child: const Column(
+                children: [
+                  Icon(Icons.check_circle_outline, color: green, size: 42),
+                  SizedBox(height: 10),
+                  Text(
+                    'Cocina al día',
+                    style: TextStyle(
+                      color: cream,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(height: 4),
-                    ...items.map((item) {
-                      final quantity = item['quantity'] as int? ?? 0;
-                      final name = item['name'] as String? ?? 'Producto';
-                      return Text(
-                        '$quantity × $name',
-                        style: const TextStyle(color: cream, fontSize: 11),
-                      );
-                    }),
-                    const SizedBox(height: 5),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: OutlinedButton.icon(
-                        key: ValueKey('acknowledge-cafe-order-${order.id}'),
-                        onPressed: () => _acknowledgeCafeOrder(order),
-                        icon: const Icon(Icons.hearing, size: 15),
-                        label: const Text('ESCUCHADO · PREPARAR'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: green,
-                          textStyle: const TextStyle(fontSize: 9),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Las comandas nuevas del TPV aparecerán aquí al instante.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final cardWidth = constraints.maxWidth >= 740
+                    ? (constraints.maxWidth - 18) / 2
+                    : constraints.maxWidth;
+                return Wrap(
+                  spacing: 18,
+                  runSpacing: 18,
+                  children: [
+                    for (final order in _pendingCafeOrders)
+                      SizedBox(
+                        width: cardWidth,
+                        child:
+                            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                          stream: FirebaseFirestore.instance
+                              .collection('kitchenOrders')
+                              .doc(order.id)
+                              .collection('items')
+                              .orderBy('position')
+                              .snapshots(),
+                          builder: (context, itemSnapshot) {
+                            if (itemSnapshot.hasError) {
+                              return Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: card,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: const Color(0xFFFF8A80),
+                                  ),
+                                ),
+                                child: Text(
+                                  'No se pudieron cargar los productos de la '
+                                  'comanda ${order.id.substring(0, 6)}.',
+                                  style: const TextStyle(color: cream),
+                                ),
+                              );
+                            }
+                            final items = itemSnapshot.data?.docs
+                                    .map((doc) =>
+                                        KitchenOrderItem.fromMap(doc.data()))
+                                    .toList(growable: false) ??
+                                const <KitchenOrderItem>[];
+                            return KitchenOrderCard(
+                              order: order.withItems(items),
+                              onStart: () => _startKitchenOrder(order),
+                              onComplete: () => _completeKitchenOrder(order),
+                            );
+                          },
                         ),
                       ),
-                    ),
                   ],
-                ),
-              );
-            }),
+                );
+              },
+            ),
         ],
       ),
     );
@@ -6061,7 +6417,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     final staffRole = normalizeUserRole(
       staffData?['role'] ?? staffData?['rol'],
     );
-    if (const {'barista', 'cajero'}.contains(staffRole)) return staffRole;
+    if (const {'barista', 'cajero', 'cocina'}.contains(staffRole)) {
+      return staffRole;
+    }
 
     final snapshot = await firestore.collection('users').doc(user.uid).get();
     final profile = snapshot.data();
@@ -6169,6 +6527,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             : (user.email?.split('@').first ?? 'Personal');
         userName = _authenticatedBarista;
         page = 'pos';
+      } else if (_isKitchenRole) {
+        page = 'kitchen';
       } else if (_userRole == 'admin') {
         _prepareAdminSession(demoMode: _debugRoleBypassActive);
         page = 'admin';
@@ -6391,6 +6751,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         date: paidAt,
         shift: shift,
         paymentMethod: paymentMethod,
+        serviceType: _selectedPosServiceType,
         total: total,
         cashReceived: received,
         changeDue: received >= total ? received - total : 0,
@@ -6676,7 +7037,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     final firstNameController = TextEditingController();
     final lastNameController = TextEditingController();
     final usernameController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    final phoneController = TextEditingController();
     DateTime? requestedBirthDate;
+    String? requestedGender;
+    String requestedPhoneCountryCode = '+591';
+    String requestedPhoneCountryIsoCode = 'BO';
     String? authenticatedStaffUid;
     String? authenticatedStaffEmail;
     String? authenticatedStaffName;
@@ -6689,14 +7055,29 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     String? requestSuccessMessage;
     var requestedRole = requiredRole == 'admin' ? 'admin' : 'barista';
     String? errorMessage;
-    final targetName =
-        requiredRole == 'admin' ? 'GERENCIA' : 'SERVICIO · CAJA Y BARRA';
+    final targetName = requiredRole == 'admin'
+        ? 'GERENCIA'
+        : requiredRole == 'personal'
+            ? 'PERSONAL'
+            : 'SERVICIO · CAJA Y BARRA';
     ModalRoute<dynamic>? staffDialogRoute;
 
     String formatBirthDate(DateTime date) =>
         '${date.year.toString().padLeft(4, '0')}-'
         '${date.month.toString().padLeft(2, '0')}-'
         '${date.day.toString().padLeft(2, '0')}';
+
+    String normalizedPhoneNumber() =>
+        phoneController.text.replaceAll(RegExp(r'\D'), '');
+
+    bool isPhoneNumberValid() {
+      final nationalNumber = normalizedPhoneNumber();
+      final fullNumber = '$requestedPhoneCountryCode$nationalNumber';
+      final digitCount = fullNumber.replaceAll(RegExp(r'\D'), '').length;
+      return nationalNumber.length >= 7 &&
+          digitCount <= 15 &&
+          RegExp(r'^\+[1-9][0-9]{6,14}$').hasMatch(fullNumber);
+    }
 
     bool isAdult(DateTime birthDate) {
       final today = DateTime.now();
@@ -6736,16 +7117,19 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       if (isRequestingAccount && requestSubmitted) return;
       if (isRequestingAccount &&
           (password.length < 8 ||
+              confirmPasswordController.text != password ||
               firstNameController.text.trim().isEmpty ||
               lastNameController.text.trim().isEmpty ||
               firstNameController.text.trim().length > 60 ||
               lastNameController.text.trim().length > 60 ||
+              requestedGender == null ||
+              !isPhoneNumberValid() ||
               UsernameRegistryService.validate(usernameController.text) !=
                   null)) {
         setDialogState(
           () => errorMessage =
-              'Ingresa nombre y apellido, un Username válido y una contraseña '
-                  'de al menos 8 caracteres.',
+              'Completa nombre, apellido, género, teléfono y Username; '
+                  'confirma una contraseña de al menos 8 caracteres.',
         );
         return;
       }
@@ -6825,10 +7209,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             final existingRequest = await transaction.get(requestReference);
             final requestData = {
               'email': refreshedStaffUser.email,
+              'firstName': firstNameController.text.trim(),
+              'lastName': lastNameController.text.trim(),
               'displayName':
                   '${firstNameController.text.trim()} ${lastNameController.text.trim()}',
               'username': usernameController.text.trim(),
+              'gender': requestedGender!,
               'birthDate': formatBirthDate(requestedBirthDate!),
+              'phoneNumber':
+                  '$requestedPhoneCountryCode${normalizedPhoneNumber()}',
+              'phoneCountryCode': requestedPhoneCountryCode,
+              'phoneCountryIsoCode': requestedPhoneCountryIsoCode,
+              'phoneNationalNumber': normalizedPhoneNumber(),
               'requestedRole': requestedRole,
               'status': 'pending',
               'createdAt': FieldValue.serverTimestamp(),
@@ -6887,7 +7279,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         }
         final role = await _readRoleFromFirestore(firestore, activeStaffUser);
         final hasRequiredRole = requiredRole == 'personal'
-            ? const {'barista', 'cajero'}.contains(role)
+            ? const {'barista', 'cajero', 'cocina'}.contains(role)
             : role == requiredRole;
         if (!activeStaffUser.emailVerified || !hasRequiredRole) {
           await auth.signOut();
@@ -6905,7 +7297,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         '"gerente" en management/${activeStaffUser.uid} '
                         '(o en el perfil anterior users).'
                     : 'El correo o contraseña es válido, pero esta cuenta no '
-                        'tiene el rol "barista" o "cajero" en '
+                        'tiene el rol "TPV", "caja" o "cocina" en '
                         'pos_staff/${activeStaffUser.uid} ni en el perfil '
                         'anterior users/${activeStaffUser.uid}.';
           });
@@ -7037,7 +7429,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   WolvesIcon(
                     icon: requiredRole == 'admin'
                         ? BrandIcons.garra
-                        : Icons.point_of_sale,
+                        : requiredRole == 'personal'
+                            ? Icons.badge_outlined
+                            : Icons.point_of_sale,
                     color: gold,
                   ),
                   const SizedBox(width: 10),
@@ -7085,6 +7479,33 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         ),
                       ),
                       const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        key: const ValueKey('staff-request-gender'),
+                        value: requestedGender,
+                        decoration: const InputDecoration(
+                          labelText: 'Género *',
+                          prefixIcon: Icon(Icons.wc_outlined),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'male',
+                            child: Text('Hombre'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'female',
+                            child: Text('Mujer'),
+                          ),
+                        ],
+                        onChanged: isLoading
+                            ? null
+                            : (gender) {
+                                setDialogState(() {
+                                  requestedGender = gender;
+                                  errorMessage = null;
+                                });
+                              },
+                      ),
+                      const SizedBox(height: 12),
                       TextField(
                         controller: usernameController,
                         textCapitalization: TextCapitalization.none,
@@ -7094,6 +7515,45 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                           helperText:
                               'Único en la app; usa letras, números, . _ -',
                           prefixIcon: Icon(Icons.alternate_email),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: phoneController,
+                        keyboardType: TextInputType.phone,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: InputDecoration(
+                          labelText: 'Teléfono celular *',
+                          hintText: 'Escribe tu número',
+                          prefixIcon: CountryCodePicker(
+                            initialSelection: 'BO',
+                            favorite: const [
+                              'BO',
+                              'AR',
+                              'BR',
+                              'CL',
+                              'PE',
+                              'US'
+                            ],
+                            showCountryOnly: false,
+                            showOnlyCountryWhenClosed: false,
+                            padding: EdgeInsets.zero,
+                            onChanged: (country) {
+                              setDialogState(() {
+                                requestedPhoneCountryCode =
+                                    country.dialCode ?? '+591';
+                                requestedPhoneCountryIsoCode =
+                                    country.code ?? 'BO';
+                                errorMessage = null;
+                              });
+                            },
+                          ),
+                          prefixIconConstraints: const BoxConstraints(
+                            minWidth: 112,
+                            minHeight: 48,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -7135,38 +7595,64 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         ),
                       ),
                       const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: requestedRole,
-                        decoration: const InputDecoration(
-                          labelText: 'Rol solicitado',
-                          prefixIcon: Icon(Icons.work_outline),
+                      if (requiredRole == 'admin')
+                        const InputDecorator(
+                          decoration: InputDecoration(
+                            labelText: 'Tipo de cuenta',
+                            prefixIcon: Icon(Icons.work_outline),
+                          ),
+                          child: Text('Gerencia'),
+                        )
+                      else ...[
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'ELIGE TU ÁREA',
+                            style: TextStyle(
+                              color: cream.withValues(alpha: 0.82),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
                         ),
-                        items: (requiredRole == 'admin'
-                                ? const ['admin']
-                                : const ['barista', 'cajero'])
-                            .map(
-                              (role) => DropdownMenuItem(
-                                value: role,
-                                child: Text(
-                                  switch (role) {
-                                    'admin' => 'Gerencia',
-                                    'cajero' => 'Caja',
-                                    _ => 'Barista',
-                                  },
-                                ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _StaffAccountTypeCard(
+                                title: 'TPV',
+                                subtitle: 'Atención y ventas',
+                                icon: Icons.point_of_sale_rounded,
+                                selected: requestedRole == 'barista',
+                                enabled: !isLoading,
+                                onTap: () {
+                                  setDialogState(() {
+                                    requestedRole = 'barista';
+                                    errorMessage = null;
+                                  });
+                                },
                               ),
-                            )
-                            .toList(),
-                        onChanged: isLoading
-                            ? null
-                            : (role) {
-                                if (role == null) return;
-                                setDialogState(() {
-                                  requestedRole = role;
-                                  errorMessage = null;
-                                });
-                              },
-                      ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _StaffAccountTypeCard(
+                                title: 'Cocina',
+                                subtitle: 'Preparar pedidos',
+                                icon: Icons.restaurant_menu_rounded,
+                                selected: requestedRole == 'cocina',
+                                enabled: !isLoading,
+                                onTap: () {
+                                  setDialogState(() {
+                                    requestedRole = 'cocina';
+                                    errorMessage = null;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       const Text(
                         'La cuenta queda pendiente. Solo gerencia puede '
@@ -7217,6 +7703,19 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                         }
                       },
                     ),
+                    if (isRequestingAccount) ...[
+                      const SizedBox(height: 12),
+                      TextField(
+                        key: const ValueKey('staff-request-confirm-password'),
+                        controller: confirmPasswordController,
+                        obscureText: obscurePassword,
+                        autofillHints: const [AutofillHints.newPassword],
+                        decoration: const InputDecoration(
+                          labelText: 'Vuelve a escribir la contraseña',
+                          prefixIcon: Icon(Icons.lock_reset_outlined),
+                        ),
+                      ),
+                    ],
                     if (errorMessage != null) ...[
                       const SizedBox(height: 12),
                       Text(
@@ -7341,7 +7840,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         }
         final primaryRole = await _readAuthorizedRole(refreshedStaffUser);
         final hasRequiredRole = requiredRole == 'personal'
-            ? const {'barista', 'cajero'}.contains(primaryRole)
+            ? const {'barista', 'cajero', 'cocina'}.contains(primaryRole)
             : primaryRole == requiredRole;
         if (!refreshedStaffUser.emailVerified || !hasRequiredRole) {
           await FirebaseAuth.instance.signOut();
@@ -7351,7 +7850,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   'más reciente; no enviaremos otro automáticamente.'
               : requiredRole == 'admin'
                   ? 'No se encontró un rol Gerencia en management/${refreshedStaffUser.uid} ni en el perfil anterior users/${refreshedStaffUser.uid}.'
-                  : 'No se encontró el rol barista o cajero en pos_staff/${refreshedStaffUser.uid} ni en el perfil anterior users/${refreshedStaffUser.uid}.';
+                  : 'No se encontró el rol TPV, caja o cocina en pos_staff/${refreshedStaffUser.uid} ni en el perfil anterior users/${refreshedStaffUser.uid}.';
           throw FirebaseAuthException(
             code: 'staff-role-changed',
             message: reason,
@@ -7375,6 +7874,8 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           if (requiredRole == 'admin') {
             _prepareAdminSession();
             page = 'admin';
+          } else if (primaryRole == 'cocina') {
+            page = 'kitchen';
           } else {
             _adminFinanceUnlocked = false;
             page = 'pos';
@@ -7382,8 +7883,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           _pageHistory.clear();
           previousPage = page;
         });
-        _subscribeCafeCatalog();
-        _subscribeCafeFamilies();
+        if (primaryRole != 'cocina') {
+          _subscribeCafeCatalog();
+          _subscribeCafeFamilies();
+        }
         _subscribeCafeOrders(refreshedStaffUser);
         if (requiredRole == 'admin') _resetAdminFinanceTimeout();
       }
@@ -8558,6 +9061,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       setState(() {
         table.status = PosTableStatus.occupied;
         _selectedPosTableNumber = table.number;
+        _selectedPosServiceType = 'dineIn';
         _posShowingTables = false;
       });
       _showSnackBar('Comanda abierta para Mesa ${table.number}.');
@@ -8571,6 +9075,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     }
     setState(() {
       _selectedPosTableNumber = table.number;
+      _selectedPosServiceType = 'dineIn';
       _posShowingTables = false;
     });
     _showSnackBar('Comanda de Mesa ${table.number} seleccionada.');
@@ -8586,6 +9091,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         ..reservationName = null
         ..reservationTime = null;
       _selectedPosTableNumber = null;
+      _selectedPosServiceType = 'takeaway';
     });
   }
 
@@ -8656,73 +9162,20 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     }
   }
 
-  void _generateBaristaQr() {
-    _baristaQrTimer?.cancel();
-    _issueBaristaQr();
-    _baristaQrTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_baristaQrSecondsRemaining <= 1) {
-        _issueBaristaQr();
-        return;
-      }
-      if (mounted) {
-        setState(() {
-          _baristaQrSecondsRemaining--;
-        });
-      }
-    });
-  }
-
-  void _issueBaristaQr() {
-    final expiresAt = DateTime.now().add(const Duration(seconds: 30));
-    final qrId = List<int>.generate(
-      16,
-      (_) => _secureRandom.nextInt(256),
-      growable: false,
-    );
-    final payload =
-        'coffee-wolves:cold-brew:${base64UrlEncode(qrId)}:${expiresAt.microsecondsSinceEpoch}';
-
-    setState(() {
-      _baristaQrGeneration++;
-      _activeBaristaQr = payload;
-      _baristaQrExpiresAt = expiresAt;
-      _baristaQrSecondsRemaining = 30;
-    });
-  }
-
-  Future<void> _simulateBaristaScan({
-    required String customerId,
+  Future<void> _redeemScannedColdBrewFigure({
+    required String customerUid,
     required String figureId,
-    required double distanceMeters,
   }) async {
     if (_isProcessingBaristaCanje) return;
-    final qrId = _activeBaristaQr;
-    final expiresAt = _baristaQrExpiresAt;
-    if (qrId == null ||
-        expiresAt == null ||
-        _baristaQrSecondsRemaining <= 0 ||
-        !expiresAt.isAfter(DateTime.now())) {
-      setState(() {
-        _activeBaristaQr = null;
-        _baristaQrExpiresAt = null;
-        _baristaQrSecondsRemaining = 0;
-      });
-      _showBaristaMessage('El QR venció. Genera uno nuevo para continuar.');
-      return;
-    }
-    if (distanceMeters > 50) {
-      _showBaristaMessage(
-        'Validación simulada rechazada: el cliente está a más de 50 m.',
-      );
-      return;
-    }
-
+    final qrId = 'coffee-wolves:cold-brew:'
+        '${base64UrlEncode(List<int>.generate(16, (_) => _secureRandom.nextInt(256), growable: false))}:'
+        '${DateTime.now().microsecondsSinceEpoch}';
     setState(() => _isProcessingBaristaCanje = true);
     if (!_debugRoleBypassActive) {
       final employee = _firebaseUser;
       if (employee == null ||
           employee.emailVerified != true ||
-          customerId.trim().isEmpty) {
+          customerUid.trim().isEmpty) {
         setState(() => _isProcessingBaristaCanje = false);
         _showBaristaMessage(
           'Se requiere un cliente identificado y una cuenta de personal '
@@ -8732,12 +9185,12 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       }
       try {
         await _rewardAuditService.redeemColdBrewStamp(
-          customerUid: customerId.trim(),
+          customerUid: customerUid.trim(),
           employeeUid: employee.uid,
           employeeEmail: employee.email ?? '',
           qrId: qrId,
           figureId: figureId,
-          distanceMeters: distanceMeters,
+          distanceMeters: 0,
         );
       } on FirebaseException catch (error, stackTrace) {
         debugPrint('No se pudo guardar el canje Cold Brew: ${error.code}');
@@ -8769,33 +9222,110 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       }
     }
 
-    _baristaQrTimer?.cancel();
     setState(() {
       _baristaAuditLog.insert(
         0,
         BaristaAuditEntry(
           scannedAt: DateTime.now(),
           baristaName: _authenticatedBarista,
-          customerId: customerId,
+          customerId: customerUid,
           qrId: qrId,
-          distanceMeters: distanceMeters,
+          distanceMeters: 0,
         ),
       );
       _coldBrewAlbumCounts.update(
-        customerId.trim(),
+        customerUid.trim(),
         (count) => count + 1,
         ifAbsent: () => 1,
       );
-      _activeBaristaQr = null;
-      _baristaQrExpiresAt = null;
-      _baristaQrSecondsRemaining = 0;
       _isProcessingBaristaCanje = false;
     });
     await _signalSuccessfulCanje();
     final figureName =
         coldBrewFigures.firstWhere((figure) => figure.id == figureId).name;
     _showBaristaMessage(
-      'Figurita $figureName registrada para ${customerId.trim()}.',
+      'Figurita $figureName registrada para ${customerUid.trim()}.',
+    );
+  }
+
+  Future<void> _openColdBrewQrScanner() async {
+    if (_isProcessingBaristaCanje) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => ColdBrewQrScanner(
+        resolveCustomer: (qrValue) => _memberCardService.resolveUserUid(
+          memberCardValueFromQr(qrValue),
+        ),
+        resolveFigure: parseColdBrewFigureQr,
+        redeem: (customerUid, figureId) => _redeemScannedColdBrewFigure(
+          customerUid: customerUid,
+          figureId: figureId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showColdBrewFigureQrs() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: card,
+        title: const Text(
+          'QR DE FIGURITAS COLD BREW',
+          style: TextStyle(color: gold, fontSize: 14),
+        ),
+        content: SizedBox(
+          width: 440,
+          height: MediaQuery.sizeOf(dialogContext).height * 0.62,
+          child: GridView.builder(
+            itemCount: coldBrewFigures.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.9,
+            ),
+            itemBuilder: (context, index) {
+              final figure = coldBrewFigures[index];
+              return Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: card2,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.all(4),
+                      child: QrImageView(
+                        key: ValueKey('cold-brew-figure-qr-${figure.id}'),
+                        data: coldBrewFigureQrPayload(figure.id),
+                        size: 112,
+                        backgroundColor: Colors.white,
+                        padding: EdgeInsets.zero,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      figure.name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: cream, fontSize: 10),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('CERRAR'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -10941,123 +11471,6 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     _showBaristaMessage(message);
   }
 
-  Future<void> _showSimulatedScanDialog(BuildContext hostContext) async {
-    var customerId = _firebaseUser?.uid ?? '';
-    var distanceInput = '12';
-    String? figureId;
-    String? validationError;
-
-    if (!hostContext.mounted) {
-      _showBaristaMessage(
-          'No se pudo abrir la validación. Inténtalo de nuevo.');
-      return;
-    }
-
-    await showDialog<void>(
-      context: hostContext,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: card,
-          scrollable: true,
-          title: const Text('Simular escaneo presencial'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Ingresa el ID de Wolves Member Card. La distancia es '
-                'simulada en esta versión y no sustituye una validación GPS.',
-                style: TextStyle(color: muted, fontSize: 12),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                key: const ValueKey('barista-customer-id'),
-                initialValue: customerId,
-                onChanged: (value) => customerId = value,
-                decoration: const InputDecoration(
-                  labelText: 'ID de cliente (UID)',
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: figureId,
-                decoration: const InputDecoration(
-                  labelText: 'Figura del Cold Brew comprado',
-                ),
-                items: coldBrewFigures
-                    .map(
-                      (figure) => DropdownMenuItem(
-                        value: figure.id,
-                        child: Text(figure.name),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) => setDialogState(() => figureId = value),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                key: const ValueKey('barista-distance'),
-                initialValue: distanceInput,
-                onChanged: (value) => distanceInput = value,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(
-                  labelText: 'Distancia simulada (metros)',
-                ),
-              ),
-              if (validationError != null) ...[
-                const SizedBox(height: 10),
-                Text(
-                  validationError!,
-                  style: const TextStyle(color: Colors.redAccent),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('CANCELAR'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final normalizedCustomerId = customerId.trim();
-                final distance = double.tryParse(distanceInput.trim());
-                if (normalizedCustomerId.isEmpty ||
-                    figureId == null ||
-                    distance == null ||
-                    distance < 0) {
-                  setDialogState(() {
-                    validationError =
-                        'Selecciona la figura e ingresa un cliente y una '
-                        'distancia válida.';
-                  });
-                  return;
-                }
-                if (distance > 50) {
-                  setDialogState(() {
-                    validationError =
-                        'Fuera del radio de 50 m. El escaneo fue rechazado.';
-                  });
-                  return;
-                }
-                Navigator.of(dialogContext).pop();
-                unawaited(
-                  _simulateBaristaScan(
-                    customerId: normalizedCustomerId,
-                    figureId: figureId!,
-                    distanceMeters: distance,
-                  ),
-                );
-              },
-              child: const Text('VALIDAR DEMO'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // ----------------------------------------------------------
   // BUILD
   // ----------------------------------------------------------
@@ -11721,6 +12134,14 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         ),
       );
     }
+    if (page == 'kitchen' && !_canAccessKitchen) {
+      return const Center(
+        child: Text(
+          'No tienes permiso para acceder a esta pantalla.',
+          style: TextStyle(color: cream),
+        ),
+      );
+    }
     if (const {'barista', 'baristaAudit'}.contains(page) && !_isStaffRole) {
       return const Center(
         child: Text(
@@ -11729,7 +12150,10 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         ),
       );
     }
-    if (_isStaffRole && page != 'pos' && page != 'splash') {
+    if (_isStaffRole &&
+        page != 'pos' &&
+        page != 'kitchen' &&
+        page != 'splash') {
       if (page == 'profile') {
         return _profile();
       }
@@ -11740,8 +12164,17 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         ),
       );
     }
+    if (_isKitchenRole && page != 'kitchen' && page != 'splash') {
+      return const Center(
+        child: Text(
+          'Las cuentas de cocina solo pueden acceder a la pantalla de cocina.',
+          style: TextStyle(color: cream),
+        ),
+      );
+    }
     if (_userRole == 'admin' &&
-        !const {'admin', 'pos', 'profile', 'splash'}.contains(page)) {
+        !const {'admin', 'pos', 'kitchen', 'profile', 'splash'}
+            .contains(page)) {
       return const Center(
         child: Text(
           'La cuenta de gerencia solo puede acceder a administración o al TPV.',
@@ -11775,6 +12208,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
 
       case 'pos':
         return _posScreen();
+
+      case 'kitchen':
+        return _kitchenDisplayScreen();
 
       case 'baristaAudit':
         return _baristaAuditReport();
@@ -12907,6 +13343,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 icon: const Icon(Icons.account_circle_outlined),
                 color: gold,
               ),
+              IconButton(
+                key: const ValueKey('pos-open-kitchen'),
+                onPressed: () => go('kitchen'),
+                tooltip: 'Pantalla de cocina',
+                icon: const Icon(Icons.kitchen_outlined),
+                color: gold,
+              ),
               const Expanded(
                 child: Text(
                   'WOLVES CLUB · TPV',
@@ -13389,6 +13832,48 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               ],
             ),
           ),
+          if (cart.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              key: const ValueKey('pos-selected-cart-items'),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF51483F)),
+              ),
+              child: Column(
+                children: [
+                  for (final entry in cart.asMap().entries)
+                    ListTile(
+                      key: ValueKey('pos-cart-item-${entry.key}'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        entry.value['name'] as String,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: cream, fontSize: 12),
+                      ),
+                      subtitle: Text(
+                        '${entry.value['qty']} × '
+                        '${_formatPrice((entry.value['price'] as num).toDouble())}',
+                        style: const TextStyle(color: muted, fontSize: 10),
+                      ),
+                      trailing: IconButton(
+                        key: ValueKey('pos-remove-cart-item-${entry.key}'),
+                        tooltip: 'Quitar ${entry.value['name']} de la comanda',
+                        onPressed: _isRecordingSale
+                            ? null
+                            : () => _removePosCartItem(entry.key),
+                        icon: const Icon(Icons.delete_outline),
+                        color: const Color(0xFFE6A296),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(14),
@@ -13400,6 +13885,38 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                DropdownButtonFormField<String>(
+                  key: const ValueKey('pos-service-type'),
+                  value: _selectedPosServiceType,
+                  dropdownColor: card2,
+                  decoration: const InputDecoration(
+                    labelText: 'Tipo de servicio',
+                    prefixIcon: Icon(Icons.room_service_outlined, color: gold),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'dineIn',
+                      child: Text('Local'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'takeaway',
+                      child: Text('Llevar'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'delivery',
+                      child: Text('Delivery'),
+                    ),
+                  ],
+                  onChanged: _isRecordingSale || _selectedPosTableNumber != null
+                      ? null
+                      : (serviceType) {
+                          if (serviceType == null) return;
+                          setState(() {
+                            _selectedPosServiceType = serviceType;
+                          });
+                        },
+                ),
+                const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
                   key: const ValueKey('pos-payment-method'),
                   value: _selectedPaymentMethod,
@@ -14047,8 +14564,6 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   }
 
   Widget _baristaCanjePanel() {
-    final qrIsActive = _activeBaristaQr != null;
-    final progress = _baristaQrSecondsRemaining / 30;
     final auditEntries = _baristaAuditLog.take(10);
 
     return Container(
@@ -14062,99 +14577,45 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!qrIsActive)
-            FilledButton.icon(
-              key: const ValueKey('generate-barista-qr'),
-              onPressed: _generateBaristaQr,
-              icon: const Icon(Icons.qr_code_2),
-              label: const Text('CANJEAR / REVELAR IDENTIDAD'),
-              style: FilledButton.styleFrom(
-                backgroundColor: gold,
-                foregroundColor: bg,
-                minimumSize: const Size.fromHeight(48),
-              ),
-            )
-          else ...[
-            const Text(
-              'QR ÚNICO · FIGURITA COLD BREW',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: gold,
-                fontSize: 11,
-                letterSpacing: 1,
-                fontWeight: FontWeight.w600,
-              ),
+          const Text(
+            'Escanea primero el QR Wolves Member Card del usuario y luego el QR '
+            'de la figura Cold Brew para registrar el canje en su álbum.',
+            style: TextStyle(color: muted, fontSize: 11, height: 1.4),
+          ),
+          const SizedBox(height: 9),
+          FilledButton.icon(
+            key: const ValueKey('scan-cold-brew-redemption'),
+            onPressed:
+                _isProcessingBaristaCanje ? null : _openColdBrewQrScanner,
+            icon: _isProcessingBaristaCanje
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.qr_code_scanner),
+            label: Text(
+              _isProcessingBaristaCanje
+                  ? 'REGISTRANDO CANJE…'
+                  : 'ESCANEAR QR DE USUARIO Y FIGURA',
             ),
-            const SizedBox(height: 9),
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                color: Colors.white,
-                child: QrImageView(
-                  key: ValueKey(
-                    'barista-validation-qr-$_baristaQrGeneration',
-                  ),
-                  data: _activeBaristaQr!,
-                  version: QrVersions.auto,
-                  size: 210,
-                  backgroundColor: Colors.white,
-                  errorCorrectionLevel: QrErrorCorrectLevel.M,
-                ),
-              ),
+            style: FilledButton.styleFrom(
+              backgroundColor: gold,
+              foregroundColor: bg,
+              minimumSize: const Size.fromHeight(46),
             ),
-            const SizedBox(height: 8),
-            Text(
-              '$_baristaQrSecondsRemaining s',
-              key: const ValueKey('barista-qr-countdown'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: gold,
-                fontSize: 21,
-                fontWeight: FontWeight.w600,
-              ),
+          ),
+          const SizedBox(height: 7),
+          OutlinedButton.icon(
+            key: const ValueKey('show-cold-brew-figure-qrs'),
+            onPressed: _showColdBrewFigureQrs,
+            icon: const Icon(Icons.qr_code_2),
+            label: const Text('VER QR DE LAS 16 FIGURITAS'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: cream,
+              side: BorderSide(color: gold.withValues(alpha: 0.55)),
+              minimumSize: const Size.fromHeight(42),
             ),
-            const SizedBox(height: 7),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(5),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 5,
-                color: gold,
-                backgroundColor: const Color(0xFF3B332B),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'El código vence en 30 segundos y cada QR se acepta una sola vez.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: muted, fontSize: 10, height: 1.4),
-            ),
-            const SizedBox(height: 8),
-            Builder(
-              builder: (buttonContext) => OutlinedButton.icon(
-                key: const ValueKey('simulate-cold-brew-scan'),
-                onPressed: _isProcessingBaristaCanje
-                    ? null
-                    : () => _showSimulatedScanDialog(buttonContext),
-                icon: _isProcessingBaristaCanje
-                    ? const SizedBox.square(
-                        dimension: 15,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.qr_code_scanner),
-                label: Text(
-                  _isProcessingBaristaCanje
-                      ? 'VALIDANDO CANJE…'
-                      : 'VALIDAR CANJE COLD BREW',
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: cream,
-                  side: BorderSide(color: gold.withValues(alpha: 0.55)),
-                  minimumSize: const Size.fromHeight(44),
-                ),
-              ),
-            ),
-          ],
+          ),
           const Divider(color: Color(0xFF39312A), height: 20),
           ExpansionTile(
             key: const ValueKey('unified-redemption-history'),
@@ -21885,7 +22346,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Text(
-                                '$displayName · ${requestedRole.toUpperCase()}',
+                                '$displayName · ${_staffRoleLabel(requestedRole)}',
                                 style: const TextStyle(
                                   color: cream,
                                   fontSize: 11,
@@ -21914,6 +22375,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                               ),
                               Text(
                                 'Fecha de nacimiento: $birthDate',
+                                style: const TextStyle(
+                                  color: muted,
+                                  fontSize: 9,
+                                ),
+                              ),
+                              Text(
+                                'Género: ${switch (data['gender']) {
+                                  'male' => 'Hombre',
+                                  'female' => 'Mujer',
+                                  _ => 'No registrado',
+                                }} · Teléfono: '
+                                '${data['phoneNumber'] as String? ?? 'No registrado'}',
                                 style: const TextStyle(
                                   color: muted,
                                   fontSize: 9,
@@ -22096,7 +22569,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     if (!_canUseManagementTools || _reviewingStaffRequestUids.contains(uid)) {
       return;
     }
-    if (!const {'barista', 'cajero'}.contains(requestedRole)) {
+    if (!const {'barista', 'cajero', 'cocina'}.contains(requestedRole)) {
       _showSnackBar('La solicitud contiene un rol no válido.');
       return;
     }
@@ -22118,11 +22591,18 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           final requestData = requestSnapshot.data()!;
           final staffData = {
             'email': requestData['email'] as String,
+            'firstName': requestData['firstName'] as String,
+            'lastName': requestData['lastName'] as String,
             'displayName': requestData['displayName'] as String? ??
                 (requestData['email'] as String).split('@').first,
             if (requestData['username'] is String)
               'username': requestData['username'] as String,
+            'gender': requestData['gender'] as String,
             'birthDate': requestData['birthDate'] as String,
+            'phoneNumber': requestData['phoneNumber'] as String,
+            'phoneCountryCode': requestData['phoneCountryCode'] as String,
+            'phoneCountryIsoCode': requestData['phoneCountryIsoCode'] as String,
+            'phoneNationalNumber': requestData['phoneNationalNumber'] as String,
             'role': requestedRole,
             'approvedAt': FieldValue.serverTimestamp(),
           };
@@ -22143,7 +22623,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       });
       _showSnackBar(
         approve
-            ? 'Solicitud aprobada. El rol $requestedRole quedó asignado en el perfil de personal.'
+            ? 'Solicitud aprobada. El rol ${_staffRoleLabel(requestedRole)} quedó asignado en el perfil de personal.'
             : 'Solicitud de acceso rechazada.',
       );
     } on FirebaseException catch (error, stackTrace) {
@@ -22242,7 +22722,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                 final data = employee.data();
                 final role = data['role'] ?? data['rol'];
                 return role is String &&
-                    const {'barista', 'cajero'}.contains(
+                    const {'barista', 'cajero', 'cocina'}.contains(
                       normalizeUserRole(role),
                     );
               }).toList()
@@ -22285,11 +22765,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       value: role,
                       dropdownColor: card,
                       style: const TextStyle(color: cream, fontSize: 11),
-                      items: const ['barista', 'cajero']
+                      items: const ['barista', 'cajero', 'cocina']
                           .map(
                             (itemRole) => DropdownMenuItem(
                               value: itemRole,
-                              child: Text(itemRole.toUpperCase()),
+                              child: Text(_staffRoleLabel(itemRole)),
                             ),
                           )
                           .toList(),
@@ -29758,7 +30238,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         asset,
         width: double.infinity,
         height: height,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => placeholder,
       );
     }
@@ -29804,7 +30284,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
             key: ValueKey('menu-firestore-image-${item.id}'),
             width: double.infinity,
             height: height,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) => imagePlaceholder(),
           );
         },
@@ -29825,7 +30305,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
               key: ValueKey('menu-local-image-${item.id}'),
               width: double.infinity,
               height: height,
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
             )
           : item.hasImage
               ? storedImage()
@@ -29835,7 +30315,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                       key: ValueKey('menu-network-image-${item.id}'),
                       width: double.infinity,
                       height: height,
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) =>
                           asset == null
                               ? placeholder
@@ -29843,7 +30323,7 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                                   asset,
                                   width: double.infinity,
                                   height: height,
-                                  fit: BoxFit.cover,
+                                  fit: BoxFit.contain,
                                   errorBuilder: (context, error, stackTrace) =>
                                       placeholder,
                                 ),
@@ -30781,6 +31261,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
         0,
         (quantity, item) => quantity + (item['qty'] as int),
       );
+
+  void _removePosCartItem(int index) {
+    if (index < 0 || index >= cart.length) return;
+    final itemName = cart[index]['name'] as String;
+    setState(() => cart.removeAt(index));
+    _showSnackBar('$itemName eliminado de la comanda.');
+  }
 
   String? get _cartBaristaName {
     for (final item in cart) {

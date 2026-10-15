@@ -1837,11 +1837,11 @@ async function getAuthorizedKitchenTokens() {
   const [posStaff, legacyStaff, management] = await Promise.all([
     db
       .collection('pos_staff')
-      .where('role', 'in', ['barista', 'cajero'])
+      .where('role', 'in', ['barista', 'cajero', 'cocina'])
       .get(),
     db
       .collection('users')
-      .where('role', 'in', ['barista', 'cajero', 'admin', 'gerente'])
+      .where('role', 'in', ['barista', 'cajero', 'cocina', 'admin', 'gerente'])
       .get(),
     db
       .collection('management')
@@ -1994,26 +1994,30 @@ async function notifyManagementProductOutOfStock(productId, product) {
   }
 }
 
-function orderDescription(order) {
-  const items = Array.isArray(order.items) ? order.items : [];
+function orderDescription(order, items = []) {
   const summary = items
     .slice(0, 4)
     .map((item) => `${item.quantity || 1} × ${item.name || 'Producto'}`)
     .join(', ');
-  const table = Number.isInteger(order.tableNumber)
-    ? `Mesa ${order.tableNumber}: `
-    : 'Barra: ';
+  const label = Number.isInteger(order.tableNumber)
+    ? `Mesa ${order.tableNumber}`
+    : order.serviceType === 'dineIn'
+      ? 'Local'
+      : order.serviceType === 'delivery'
+        ? 'Delivery'
+        : 'Llevar';
+  const table = `${label}: `;
   return `${table}${summary || 'Nueva comanda pendiente'}`;
 }
 
-async function notifyKitchen(orderId, order) {
+async function notifyKitchen(orderId, order, items = order.items) {
   const registrations = await getAuthorizedKitchenTokens();
   if (registrations.length === 0) {
     logger.warn('No hay dispositivos push autorizados registrados.', { orderId });
     return;
   }
 
-  const body = orderDescription(order).slice(0, 180);
+  const body = orderDescription(order, items).slice(0, 180);
   for (let offset = 0; offset < registrations.length; offset += 500) {
     const batch = registrations.slice(offset, offset + 500);
     const response = await getMessaging().sendEachForMulticast({
@@ -2091,6 +2095,46 @@ async function sendPendingOrderAlert(orderId, orderReference) {
   await notifyKitchen(orderId, beforeSend.data());
 }
 
+async function sendPendingKitchenOrderAlert(orderId, orderReference) {
+  const beforeSend = await orderReference.get();
+  if (!beforeSend.exists || beforeSend.data().status !== 'pending') return;
+  const itemSnapshot = await orderReference
+    .collection('items')
+    .orderBy('position')
+    .get();
+  const items = itemSnapshot.docs.map((item) => item.data());
+
+  await orderReference.update({
+    lastNotificationAt: FieldValue.serverTimestamp(),
+  });
+  await notifyKitchen(orderId, beforeSend.data(), items);
+}
+
+exports.notifyKitchenOnNewKitchenOrder = onDocumentCreated(
+  {
+    document: 'kitchenOrders/{orderId}',
+    region,
+  },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot || snapshot.data().status !== 'pending') return;
+    await sendPendingKitchenOrderAlert(event.params.orderId, snapshot.ref);
+  },
+);
+
+exports.closeKitchenAlertWhenPreparationStarts = onDocumentUpdated(
+  {
+    document: 'kitchenOrders/{orderId}',
+    region,
+  },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (before?.status !== 'pending' || after?.status !== 'preparing') return;
+    await closeKitchenNotifications(event.params.orderId);
+  },
+);
+
 exports.notifyKitchenOnNewOrder = onDocumentCreated(
   {
     document: 'cafeOrders/{orderId}',
@@ -2140,33 +2184,6 @@ exports.closeKitchenAlertOnAcknowledgement = onDocumentUpdated(
   },
 );
 
-exports.notifyKitchenOnNewInternalOrder = onDocumentCreated(
-  {
-    document: 'pedidos_internos/{orderId}',
-    region,
-  },
-  async (event) => {
-    const snapshot = event.data;
-    if (!snapshot || snapshot.data().status !== 'pending') return;
-    await sendPendingOrderAlert(event.params.orderId, snapshot.ref);
-  },
-);
-
-exports.closeKitchenAlertOnInternalOrderAcknowledgement = onDocumentUpdated(
-  {
-    document: 'pedidos_internos/{orderId}',
-    region,
-  },
-  async (event) => {
-    const before = event.data?.before.data();
-    const after = event.data?.after.data();
-    if (before?.status !== 'pending' || after?.status !== 'acknowledged') {
-      return;
-    }
-    await closeKitchenNotifications(event.params.orderId);
-  },
-);
-
 exports.repeatPendingKitchenAlerts = onSchedule(
   {
     schedule: 'every 1 minutes',
@@ -2175,7 +2192,7 @@ exports.repeatPendingKitchenAlerts = onSchedule(
   },
   async () => {
     const pendingOrderCollections = await Promise.all(
-      ['pedidos_internos', 'cafeOrders'].map((collectionName) =>
+      ['kitchenOrders', 'cafeOrders'].map((collectionName) =>
         db
           .collection(collectionName)
           .where('status', '==', 'pending')
@@ -2195,7 +2212,11 @@ exports.repeatPendingKitchenAlerts = onSchedule(
         ) {
           continue;
         }
-        await sendPendingOrderAlert(order.id, order.ref);
+        if (order.ref.parent.id === 'kitchenOrders') {
+          await sendPendingKitchenOrderAlert(order.id, order.ref);
+        } else {
+          await sendPendingOrderAlert(order.id, order.ref);
+        }
       }
     }
   },
