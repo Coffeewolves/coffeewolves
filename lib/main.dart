@@ -4425,6 +4425,9 @@ class _WolvesClubAppState extends State<WolvesClubApp>
   bool _cafeOrderSoundEnabled = false;
   bool _cafeOrderAlarmPlaying = false;
   bool _cafePushEnabled = false;
+  bool _kitchenShowingMenu = false;
+  String _kitchenMenuSearch = '';
+  String _selectedKitchenMenuCategory = 'Todos';
   String? _lastPosSaleId;
   bool _passportRewardClaimed = false;
   String _adminComplaintTypeFilter = 'all';
@@ -5137,6 +5140,11 @@ class _WolvesClubAppState extends State<WolvesClubApp>
       _userRole = 'user';
       _isLoadingRole = user != null;
       _debugRoleBypassActive = false;
+      if (user == null) {
+        _kitchenShowingMenu = false;
+        _kitchenMenuSearch = '';
+        _selectedKitchenMenuCategory = 'Todos';
+      }
       _firestoreCafeProductIds.clear();
       _walletBalance = 0;
       final displayName = user?.displayName?.trim() ?? '';
@@ -5148,8 +5156,14 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           ? ''
           : '@${userName.toLowerCase().replaceAll(RegExp(r'\s+'), '')}';
       if (user == null &&
-          const {'pos', 'barista', 'baristaAudit', 'admin', 'emailVerification'}
-              .contains(page)) {
+          const {
+            'pos',
+            'barista',
+            'baristaAudit',
+            'admin',
+            'kitchen',
+            'emailVerification'
+          }.contains(page)) {
         page = 'login';
       }
     });
@@ -5872,7 +5886,21 @@ class _WolvesClubAppState extends State<WolvesClubApp>
           Row(
             children: [
               if (_isKitchenRole)
-                const SizedBox(width: 48)
+                IconButton(
+                  key: const ValueKey('kitchen-menu-toggle'),
+                  onPressed: () => setState(
+                    () => _kitchenShowingMenu = !_kitchenShowingMenu,
+                  ),
+                  tooltip: _kitchenShowingMenu
+                      ? 'Volver a las comandas'
+                      : 'Ver menú del café',
+                  icon: Icon(
+                    _kitchenShowingMenu
+                        ? Icons.soup_kitchen_outlined
+                        : Icons.menu_book_outlined,
+                    color: gold,
+                  ),
+                )
               else
                 IconButton(
                   key: const ValueKey('kitchen-back-to-pos'),
@@ -5880,11 +5908,13 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   tooltip: 'Volver al TPV',
                   icon: const Icon(Icons.arrow_back_ios_new, color: gold),
                 ),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'WOLVES CLUB · COCINA',
+                  _kitchenShowingMenu && _isKitchenRole
+                      ? 'WOLVES CLUB · MENÚ'
+                      : 'WOLVES CLUB · COCINA',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: cream,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -5903,119 +5933,252 @@ class _WolvesClubAppState extends State<WolvesClubApp>
                   color: _cafeOrderSoundEnabled ? green : gold,
                 ),
               ),
+              if (_isKitchenRole)
+                IconButton(
+                  key: const ValueKey('kitchen-sign-out'),
+                  onPressed: () => unawaited(_signOut()),
+                  tooltip: 'Cerrar sesión',
+                  icon: const Icon(Icons.logout, color: gold),
+                ),
             ],
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${_pendingCafeOrders.length} ACTIVAS · '
-                  '$pendingCount NUEVAS',
-                  style: const TextStyle(
-                    color: muted,
-                    fontSize: 12,
-                    letterSpacing: 0.7,
-                  ),
-                ),
-              ),
-              if (_lastCompletedKitchenOrder != null && undoSeconds > 0)
-                OutlinedButton.icon(
-                  key: const ValueKey('undo-kitchen-completion'),
-                  onPressed: _undoKitchenCompletion,
-                  icon: const Icon(Icons.undo, size: 17),
-                  label: Text('DESHACER · ${undoSeconds}s'),
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (_pendingCafeOrders.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(30),
-              decoration: BoxDecoration(
-                color: card,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: gold.withValues(alpha: 0.25)),
-              ),
-              child: const Column(
-                children: [
-                  Icon(Icons.check_circle_outline, color: green, size: 42),
-                  SizedBox(height: 10),
-                  Text(
-                    'Cocina al día',
-                    style: TextStyle(
-                      color: cream,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
+          if (_isKitchenRole && _kitchenShowingMenu)
+            _kitchenMenuView()
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${_pendingCafeOrders.length} ACTIVAS · '
+                    '$pendingCount NUEVAS',
+                    style: const TextStyle(
+                      color: muted,
+                      fontSize: 12,
+                      letterSpacing: 0.7,
                     ),
                   ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Las comandas nuevas del TPV aparecerán aquí al instante.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: muted, fontSize: 12),
+                ),
+                if (_lastCompletedKitchenOrder != null && undoSeconds > 0)
+                  OutlinedButton.icon(
+                    key: const ValueKey('undo-kitchen-completion'),
+                    onPressed: _undoKitchenCompletion,
+                    icon: const Icon(Icons.undo, size: 17),
+                    label: Text('DESHACER · ${undoSeconds}s'),
                   ),
-                ],
-              ),
-            )
-          else
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final cardWidth = constraints.maxWidth >= 740
-                    ? (constraints.maxWidth - 18) / 2
-                    : constraints.maxWidth;
-                return Wrap(
-                  spacing: 18,
-                  runSpacing: 18,
-                  children: [
-                    for (final order in _pendingCafeOrders)
-                      SizedBox(
-                        width: cardWidth,
-                        child:
-                            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                          stream: FirebaseFirestore.instance
-                              .collection('kitchenOrders')
-                              .doc(order.id)
-                              .collection('items')
-                              .orderBy('position')
-                              .snapshots(),
-                          builder: (context, itemSnapshot) {
-                            if (itemSnapshot.hasError) {
-                              return Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: card,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: const Color(0xFFFF8A80),
-                                  ),
-                                ),
-                                child: Text(
-                                  'No se pudieron cargar los productos de la '
-                                  'comanda ${order.id.substring(0, 6)}.',
-                                  style: const TextStyle(color: cream),
-                                ),
-                              );
-                            }
-                            final items = itemSnapshot.data?.docs
-                                    .map((doc) =>
-                                        KitchenOrderItem.fromMap(doc.data()))
-                                    .toList(growable: false) ??
-                                const <KitchenOrderItem>[];
-                            return KitchenOrderCard(
-                              order: order.withItems(items),
-                              onStart: () => _startKitchenOrder(order),
-                              onComplete: () => _completeKitchenOrder(order),
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                );
-              },
+              ],
             ),
+            const SizedBox(height: 14),
+            if (_pendingCafeOrders.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(30),
+                decoration: BoxDecoration(
+                  color: card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: gold.withValues(alpha: 0.25)),
+                ),
+                child: const Column(
+                  children: [
+                    Icon(Icons.check_circle_outline, color: green, size: 42),
+                    SizedBox(height: 10),
+                    Text(
+                      'Cocina al día',
+                      style: TextStyle(
+                        color: cream,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Las comandas nuevas del TPV aparecerán aquí al instante.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              )
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final cardWidth = constraints.maxWidth >= 740
+                      ? (constraints.maxWidth - 18) / 2
+                      : constraints.maxWidth;
+                  return Wrap(
+                    spacing: 18,
+                    runSpacing: 18,
+                    children: [
+                      for (final order in _pendingCafeOrders)
+                        SizedBox(
+                          width: cardWidth,
+                          child: StreamBuilder<
+                              QuerySnapshot<Map<String, dynamic>>>(
+                            stream: FirebaseFirestore.instance
+                                .collection('kitchenOrders')
+                                .doc(order.id)
+                                .collection('items')
+                                .orderBy('position')
+                                .snapshots(),
+                            builder: (context, itemSnapshot) {
+                              if (itemSnapshot.hasError) {
+                                return Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: card,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: const Color(0xFFFF8A80),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'No se pudieron cargar los productos de la '
+                                    'comanda ${order.id.substring(0, 6)}.',
+                                    style: const TextStyle(color: cream),
+                                  ),
+                                );
+                              }
+                              final items = itemSnapshot.data?.docs
+                                      .map((doc) =>
+                                          KitchenOrderItem.fromMap(doc.data()))
+                                      .toList(growable: false) ??
+                                  const <KitchenOrderItem>[];
+                              return KitchenOrderCard(
+                                order: order.withItems(items),
+                                onStart: () => _startKitchenOrder(order),
+                                onComplete: () => _completeKitchenOrder(order),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _kitchenMenuView() {
+    final visibleItems =
+        _cafeMenuItems.where((item) => item.isVisible).toList(growable: false);
+    final categories = [
+      'Todos',
+      ...visibleItems.map((item) => item.category).toSet(),
+    ];
+    final search = _kitchenMenuSearch.trim().toLowerCase();
+    final products = visibleItems.where((item) {
+      final matchesCategory = _selectedKitchenMenuCategory == 'Todos' ||
+          item.category == _selectedKitchenMenuCategory;
+      final matchesSearch = search.isEmpty ||
+          item.name.toLowerCase().contains(search) ||
+          item.description.toLowerCase().contains(search);
+      return matchesCategory && matchesSearch;
+    }).toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'MENÚ DEL CAFÉ · SIN PRECIOS',
+          style: TextStyle(
+            color: muted,
+            fontSize: 12,
+            letterSpacing: 0.7,
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          key: const ValueKey('kitchen-menu-search'),
+          onChanged: (value) => setState(() => _kitchenMenuSearch = value),
+          style: const TextStyle(color: white),
+          decoration: const InputDecoration(
+            hintText: 'Buscar productos o ingredientes',
+            prefixIcon: Icon(Icons.search, color: muted),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: categories.map((category) {
+              final selected = _selectedKitchenMenuCategory == category;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(category),
+                  selected: selected,
+                  onSelected: (_) => setState(
+                    () => _selectedKitchenMenuCategory = category,
+                  ),
+                  selectedColor: brownDark,
+                  labelStyle: TextStyle(
+                    color: selected ? cream : muted,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                  side: BorderSide(
+                    color: selected ? cream2 : const Color(0xFF51483F),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '${products.length} productos',
+          style: const TextStyle(color: muted, fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+        if (products.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 28),
+            child: Text(
+              'No hay productos para mostrar con este filtro.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: muted),
+            ),
+          )
+        else
+          ...products.map((item) {
+            final available = item.isAvailable &&
+                !(item.stockTracked && item.stock <= 0) &&
+                !_unavailableItems.contains(item.name);
+            return Card(
+              key: ValueKey('kitchen-menu-item-${item.id}'),
+              color: card,
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: brownDark,
+                  child: Icon(item.icon, color: cream),
+                ),
+                title: Text(
+                  item.name,
+                  style: const TextStyle(
+                    color: cream,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  '${item.category} · ${item.description}',
+                  style: const TextStyle(color: muted, fontSize: 12),
+                ),
+                trailing: available
+                    ? null
+                    : const Text(
+                        'AGOTADO',
+                        style: TextStyle(
+                          color: Color(0xFFE6A296),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            );
+          }),
+      ],
     );
   }
 
