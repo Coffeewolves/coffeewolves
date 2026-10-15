@@ -6832,7 +6832,15 @@ class _WolvesClubAppState extends State<WolvesClubApp>
     } catch (error, stackTrace) {
       debugPrint('No se pudo registrar la venta: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (mounted) _showSnackBar(error.toString());
+      if (mounted) {
+        final errorMessage = error.toString();
+        _showSnackBar(
+          errorMessage.contains('Dart exception thrown from converted Future')
+              ? 'No se pudo confirmar el resultado del cobro. Verifica el '
+                  'historial antes de volver a cobrar.'
+              : errorMessage,
+        );
+      }
     } finally {
       if (mounted) setState(() => _isRecordingSale = false);
     }
